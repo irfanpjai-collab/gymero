@@ -1,0 +1,169 @@
+'use server'
+
+import { createClient } from '@/lib/supabase/server'
+import { revalidatePath } from 'next/cache'
+import type { Coach, Member } from '@/types'
+
+export async function getCoaches(): Promise<Coach[]> {
+  try {
+    const supabase = await createClient()
+
+    const { data, error } = await supabase
+      .from('coaches')
+      .select('*')
+      .eq('is_active', true)
+      .order('name', { ascending: true })
+
+    if (error) throw error
+
+    return (data ?? []) as Coach[]
+  } catch (err) {
+    console.error('getCoaches error:', err)
+    return []
+  }
+}
+
+export async function createCoach(data: FormData): Promise<{ error?: string }> {
+  try {
+    const supabase = await createClient()
+
+    // Generate coach_id: 'C' + padded next number
+    const { data: existing, error: countError } = await supabase
+      .from('coaches')
+      .select('coach_id')
+      .order('coach_id', { ascending: false })
+      .limit(1)
+      .single()
+
+    let nextNumber = 1
+    if (!countError && existing) {
+      const lastId = (existing as { coach_id: string }).coach_id
+      const numPart = parseInt(lastId.replace(/^C/, ''), 10)
+      if (!isNaN(numPart)) nextNumber = numPart + 1
+    }
+
+    const coachId = `C${String(nextNumber).padStart(3, '0')}`
+
+    const payload: Record<string, unknown> = {
+      coach_id: coachId,
+      name: data.get('name') as string,
+      mobile: data.get('mobile') as string,
+      is_active: true,
+    }
+
+    const email = data.get('email') as string | null
+    if (email) payload.email = email
+
+    const specialization = data.get('specialization') as string | null
+    if (specialization) payload.specialization = specialization
+
+    const { error } = await supabase.from('coaches').insert(payload)
+
+    if (error) throw error
+
+    revalidatePath('/coaches')
+    return {}
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return { error: message }
+  }
+}
+
+export async function updateCoach(
+  id: string,
+  data: FormData
+): Promise<{ error?: string }> {
+  try {
+    const supabase = await createClient()
+
+    const payload: Record<string, unknown> = {}
+
+    const fields = ['name', 'mobile', 'email', 'specialization']
+    for (const field of fields) {
+      const value = data.get(field) as string | null
+      if (value !== null && value !== '') {
+        payload[field] = value
+      }
+    }
+
+    const isActive = data.get('is_active')
+    if (isActive !== null) {
+      payload.is_active = isActive === 'true' || isActive === '1'
+    }
+
+    const { error } = await supabase.from('coaches').update(payload).eq('id', id)
+
+    if (error) throw error
+
+    revalidatePath('/coaches')
+    return {}
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return { error: message }
+  }
+}
+
+export async function getCoachMembers(coachId: string): Promise<Member[]> {
+  try {
+    const supabase = await createClient()
+
+    const { data, error } = await supabase
+      .from('members')
+      .select(`
+        *,
+        coach_members!inner(coach_id)
+      `)
+      .eq('coach_members.coach_id', coachId)
+
+    if (error) throw error
+
+    return (data ?? []) as unknown as Member[]
+  } catch (err) {
+    console.error('getCoachMembers error:', err)
+    return []
+  }
+}
+
+export async function assignMember(
+  coachId: string,
+  memberId: string
+): Promise<{ error?: string }> {
+  try {
+    const supabase = await createClient()
+
+    const { error } = await supabase
+      .from('coach_members')
+      .upsert({ coach_id: coachId, member_id: memberId }, { onConflict: 'coach_id,member_id', ignoreDuplicates: true })
+
+    if (error) throw error
+
+    revalidatePath('/coaches')
+    return {}
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return { error: message }
+  }
+}
+
+export async function unassignMember(
+  coachId: string,
+  memberId: string
+): Promise<{ error?: string }> {
+  try {
+    const supabase = await createClient()
+
+    const { error } = await supabase
+      .from('coach_members')
+      .delete()
+      .eq('coach_id', coachId)
+      .eq('member_id', memberId)
+
+    if (error) throw error
+
+    revalidatePath('/coaches')
+    return {}
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return { error: message }
+  }
+}

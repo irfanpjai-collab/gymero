@@ -1,0 +1,301 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f8f9fb;
+  --foreground: #0f1117;
+  --card: #ffffff;
+  --card-elevated: #f1f3f7;
+  --card-foreground: #0f1117;
+  --border: #e2e6ed;
+  --border-bright: #c8cfd9;
+  --input: #ffffff;
+  --primary: #65a30d; /* lime green */
+  --primary-foreground: #ffffff;
+  --secondary: #edf0f7;
+  --secondary-foreground: #0f1117;
+  --muted: #f1f3f7;
+  --muted-foreground: #6b7280;
+  --accent: #65a30d;
+  --accent-foreground: #ffffff;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --ring: #65a30d;
+  --radius: 0.75rem;
+  --sidebar: #090b0f;
+  --sidebar-foreground: #6b7280;
+  --sidebar-active-foreground: #e8eaf0;
+  --shadow-sm: 0 1px 3px rgba(15, 17, 23, 0.08), 0 1px 2px rgba(15, 17, 23, 0.06);
+  --shadow-md: 0 4px 16px rgba(15, 17, 23, 0.1), 0 2px 6px rgba(15, 17, 23, 0.06);
+  --shadow-lg: 0 8px 32px rgba(15, 17, 23, 0.12), 0 4px 12px rgba(15, 17, 23, 0.08);
+}
+
+.dark {
+  --background: #050608; /* rich deep black matching the logo */
+  --foreground: #e2e8f0;
+  --card: #0d0f14; /* very dark gray card */
+  --card-elevated: #131720;
+  --card-foreground: #e2e8f0;
+  --border: #1a1e27;
+  --border-bright: #2d3445;
+  --input: #0d0f14;
+  --primary: #7df914; /* neon green matching the logo */
+  --primary-foreground: #050608; /* dark text on green button */
+  --secondary: #131720;
+  --secondary-foreground: #e2e8f0;
+  --muted: #0d0f14;
+  --muted-foreground: #8a93a6;
+  --accent: #7df914;
+  --accent-foreground: #050608;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --ring: #7df914;
+  --sidebar: #030406;
+  --sidebar-foreground: #5c6475;
+  --sidebar-active-foreground: #e2e8f0;
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5), 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-elevated: var(--card-elevated);
+  --color-card-foreground: var(--card-foreground);
+  --color-border: var(--border);
+  --color-border-bright: var(--border-bright);
+  --color-input: var(--input);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+}
+
+* {
+  border-color: var(--border);
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-bright);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
+
+/* ─── Shadow utilities ─── */
+.shadow-card {
+  box-shadow: var(--shadow-sm);
+}
+.shadow-card-hover {
+  box-shadow: var(--shadow-md);
+}
+.shadow-elevated {
+  box-shadow: var(--shadow-lg);
+}
+
+/* ─── Keyframe animations ─── */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes slideInFromRight {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.4s ease-out forwards;
+}
+
+.animate-slide-in {
+  animation: slideInFromRight 0.3s ease-out forwards;
+}
+
+.animate-scale-in {
+  animation: scaleIn 0.25s ease-out forwards;
+}
+
+.animate-pulse-soft {
+  animation: pulse-soft 2.5s ease-in-out infinite;
+}
+
+/* Staggered animation delays for children */
+.stagger-children > * {
+  opacity: 0;
+  animation: fadeInUp 0.4s ease-out forwards;
+}
+.stagger-children > *:nth-child(1) { animation-delay: 0ms; }
+.stagger-children > *:nth-child(2) { animation-delay: 60ms; }
+.stagger-children > *:nth-child(3) { animation-delay: 120ms; }
+.stagger-children > *:nth-child(4) { animation-delay: 180ms; }
+.stagger-children > *:nth-child(5) { animation-delay: 240ms; }
+.stagger-children > *:nth-child(6) { animation-delay: 300ms; }
+.stagger-children > *:nth-child(7) { animation-delay: 360ms; }
+.stagger-children > *:nth-child(8) { animation-delay: 420ms; }
+
+/* ─── Card hover effect ─── */
+.card-hover {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: var(--shadow-sm);
+}
+.card-hover:hover {
+  border-color: var(--primary) !important;
+  box-shadow: 0 12px 28px -5px rgba(0, 0, 0, 0.4), 0 0 16px rgba(125, 249, 20, 0.15);
+  transform: translateY(-4px) scale(1.008);
+}
+
+/* ─── Stat card ─── */
+.stat-card {
+  position: relative;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: var(--shadow-sm);
+}
+.stat-card:hover {
+  transform: translateY(-4px) scale(1.03);
+  box-shadow: 0 12px 28px -5px rgba(0, 0, 0, 0.5), 0 0 20px rgba(125, 249, 20, 0.2);
+  border-color: var(--primary) !important;
+}
+.stat-card svg {
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.stat-card:hover svg {
+  transform: scale(1.2) rotate(6deg);
+}
+
+/* ─── Grace period indicator pulse ─── */
+@keyframes orangePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(251, 146, 60, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(251, 146, 60, 0); }
+}
+.pulse-orange {
+  animation: orangePulse 2s ease-in-out infinite;
+}
+
+/* ─── Glass card ─── */
+.glass-card {
+  background: rgba(255, 255, 255, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+}
+.dark .glass-card {
+  background: rgba(19, 21, 28, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(30, 33, 48, 0.8);
+}
+
+/* ─── Table row hover ─── */
+.table-row-hover {
+  transition: all 0.15s ease;
+}
+.table-row-hover:hover {
+  background: var(--muted);
+}
+
+/* ─── Gradient text ─── */
+.gradient-text {
+  background: linear-gradient(135deg, var(--primary) 0%, #818cf8 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ─── Active nav indicator ─── */
+.nav-active {
+  position: relative;
+}
+.nav-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 60%;
+  background: var(--primary);
+  border-radius: 0 4px 4px 0;
+}
+
+/* ─── Badge shimmer ─── */
+.badge-shimmer {
+  background-size: 200% 100%;
+  animation: shimmer 3s ease-in-out infinite;
+}
+
+/* ─── Premium form input ─── */
+.input-premium {
+  transition: all 0.2s ease;
+}
+.input-premium:focus {
+  box-shadow: 0 0 0 3px rgba(125, 249, 20, 0.15);
+}
+
+.shadow-neon {
+  box-shadow: 0 0 12px rgba(125, 249, 20, 0.12);
+}
+.shadow-neon-hover:hover {
+  box-shadow: 0 0 20px rgba(125, 249, 20, 0.22);
+  border-color: rgba(125, 249, 20, 0.4) !important;
+}
