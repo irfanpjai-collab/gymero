@@ -1,11 +1,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import type { UserProfile } from '@/types'
 import { useTheme } from 'next-themes'
-import { Sun, Moon } from 'lucide-react'
+import { Sun, Moon, LogOut } from 'lucide-react'
 
 const pageTitles: Record<string, string> = {
   '/dashboard': 'Dashboard',
@@ -43,9 +43,16 @@ function getRoleBadgeClass(role: string): string {
 
 export default function TopBar() {
   const pathname = usePathname()
+  const router = useRouter()
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const { theme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
+
+  const handleLogout = async () => {
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    router.push('/login')
+  }
 
   useEffect(() => {
     setMounted(true)
@@ -75,11 +82,11 @@ export default function TopBar() {
     <header className="sticky top-0 z-20 flex items-center justify-between px-4 lg:px-6 py-2 lg:py-3 bg-background/90 backdrop-blur-md border-b border-border shadow-[0_1px_0_0_var(--border)]">
       <div className="flex items-center gap-3">
         {/* Mobile/Tablet Brand Logo */}
-        <div className="lg:hidden flex items-center bg-white rounded-lg p-1 px-2 shadow-neon shrink-0">
+        <div className="lg:hidden flex items-center shrink-0">
           <img
             src="/logo.png"
             alt="Green Power Fitness Center"
-            className="h-7 w-auto object-contain"
+            className="h-7 w-auto object-contain dark:brightness-0 dark:invert opacity-90"
           />
         </div>
         <h2 className="text-sm lg:text-base font-semibold text-foreground tracking-tight">{pageTitle}</h2>
@@ -112,6 +119,13 @@ export default function TopBar() {
               <p className="text-[11px] text-muted-foreground leading-tight">{profile.email}</p>
             </div>
           )}
+          <button
+            onClick={handleLogout}
+            className="lg:hidden ml-1 w-8 h-8 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-500 flex items-center justify-center transition-all cursor-pointer"
+            aria-label="Logout"
+          >
+            <LogOut className="w-4 h-4" />
+          </button>
         </div>
       </div>
     </header>
