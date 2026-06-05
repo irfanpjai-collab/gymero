@@ -40,7 +40,7 @@ export default function LoginPage() {
       <div className="w-full max-w-sm relative z-10">
         {/* Brand Logo */}
         <div className="flex flex-col items-center gap-3 mb-8">
-          <div className="bg-white rounded-2xl p-4 shadow-neon flex items-center justify-center w-52">
+          <div className="flex items-center justify-center w-52">
             <img
               src="/logo.png"
               alt="Green Power Fitness Center"
