@@ -16,6 +16,8 @@ import { getMembers } from '@/app/actions/members'
 import WelcomeBanner from '@/components/dashboard/WelcomeBanner'
 import { formatDate, formatCurrency } from '@/lib/utils'
 
+export const dynamic = 'force-dynamic'
+
 function StatCard({
   label,
   value,
