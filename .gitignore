@@ -41,3 +41,22 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+.vercel
+.env*.local
+
+# electron
+/electron/node_modules
+/electron/build
+/electron/bridge
+/dist
+
+# biometric bridge
+/biometric-bridge/__pycache__
+/biometric-bridge/*.spec
+/biometric-bridge/venv
+*.spec
+
+# backups / generated
+ai-monitor-backup.zip
+/biometric-bridge.spec

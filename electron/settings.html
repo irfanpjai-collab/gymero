@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Settings — Green Power CRM</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: #0f0f12;
+      color: #e2e8f0;
+      padding: 28px 28px 20px;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    h1 {
+      font-size: 15px;
+      font-weight: 600;
+      color: #f1f5f9;
+      margin-bottom: 22px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    h1::before {
+      content: '';
+      display: inline-block;
+      width: 3px;
+      height: 17px;
+      background: #22c55e;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+
+    .card {
+      background: #16161d;
+      border: 1px solid #23232d;
+      border-radius: 10px;
+      padding: 18px;
+      margin-bottom: 14px;
+    }
+
+    .card-title {
+      font-size: 10.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+      color: #4b5563;
+      margin-bottom: 14px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 110px;
+      gap: 10px;
+    }
+
+    .field { margin-bottom: 12px }
+    .field:last-child { margin-bottom: 0 }
+
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 500;
+      color: #94a3b8;
+      margin-bottom: 5px;
+    }
+
+    input[type="text"],
+    input[type="number"] {
+      width: 100%;
+      padding: 8px 11px;
+      background: #0f0f12;
+      border: 1px solid #23232d;
+      border-radius: 7px;
+      color: #f1f5f9;
+      font-size: 13px;
+      outline: none;
+      transition: border-color 0.12s;
+    }
+
+    input[type="text"]:focus,
+    input[type="number"]:focus { border-color: #22c55e }
+
+    input[type="number"]::-webkit-inner-spin-button { opacity: 0.4 }
+
+    .check-row {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .check-row input[type="checkbox"] {
+      width: 15px;
+      height: 15px;
+      accent-color: #22c55e;
+      cursor: pointer;
+    }
+
+    .check-row span {
+      font-size: 13px;
+      color: #cbd5e1;
+    }
+
+    .hint {
+      font-size: 11px;
+      color: #374151;
+      margin-top: 6px;
+    }
+
+    .actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    button {
+      padding: 8px 20px;
+      border-radius: 7px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      transition: opacity 0.12s, transform 0.08s;
+    }
+
+    button:active { transform: scale(0.97) }
+
+    .btn-save {
+      background: #22c55e;
+      color: #0a160f;
+    }
+
+    .btn-save:hover { background: #16a34a }
+
+    .btn-cancel {
+      background: transparent;
+      color: #64748b;
+      border: 1px solid #23232d;
+    }
+
+    .btn-cancel:hover { color: #94a3b8; border-color: #374151 }
+
+    #status {
+      font-size: 11.5px;
+      color: #22c55e;
+      margin-top: 10px;
+      text-align: right;
+      min-height: 16px;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    #status.show { opacity: 1 }
+  </style>
+</head>
+<body>
+  <h1>Settings</h1>
+
+  <div class="card">
+    <div class="card-title">Biometric Device (ZKTeco / ESSL)</div>
+    <div class="field">
+      <div class="row">
+        <div>
+          <label for="deviceIp">Device IP Address</label>
+          <input type="text" id="deviceIp" placeholder="192.168.1.201" spellcheck="false">
+        </div>
+        <div>
+          <label for="devicePort">Port</label>
+          <input type="number" id="devicePort" placeholder="4370" min="1" max="65535">
+        </div>
+      </div>
+      <p class="hint">Find the IP in the device's Comm → Ethernet menu.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Startup</div>
+    <div class="field">
+      <label class="check-row">
+        <input type="checkbox" id="autoStart">
+        <span>Launch Green Power CRM automatically when Windows starts</span>
+      </label>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn-cancel" id="cancelBtn">Cancel</button>
+    <button class="btn-save"   id="saveBtn">Save &amp; Restart</button>
+  </div>
+
+  <p id="status">Saved — restarting services…</p>
+
+  <script>
+    const { ipcRenderer } = require('electron')
+
+    // Load existing config
+    ipcRenderer.invoke('get-config').then((cfg) => {
+      document.getElementById('deviceIp').value    = cfg.deviceIp   ?? ''
+      document.getElementById('devicePort').value  = cfg.devicePort ?? 4370
+      document.getElementById('autoStart').checked = cfg.autoStart  ?? false
+    })
+
+    document.getElementById('cancelBtn').addEventListener('click', () => window.close())
+
+    document.getElementById('saveBtn').addEventListener('click', async () => {
+      const data = {
+        deviceIp:   document.getElementById('deviceIp').value.trim(),
+        devicePort: parseInt(document.getElementById('devicePort').value) || 4370,
+        autoStart:  document.getElementById('autoStart').checked,
+      }
+
+      document.getElementById('saveBtn').disabled = true
+      await ipcRenderer.invoke('save-config', data)
+
+      const s = document.getElementById('status')
+      s.classList.add('show')
+      setTimeout(() => window.close(), 1200)
+    })
+  </script>
+</body>
+</html>

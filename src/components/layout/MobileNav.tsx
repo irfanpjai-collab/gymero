@@ -7,18 +7,16 @@ import {
   LayoutDashboard,
   Users,
   DollarSign,
-  Wallet,
-  MessageCircle,
+  Fingerprint,
   MoreHorizontal,
 } from 'lucide-react'
 
 const navItems = [
-  { href: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { href: '/members', icon: Users, label: 'Members' },
-  { href: '/payments', icon: DollarSign, label: 'Payments' },
-  { href: '/salary', icon: Wallet, label: 'Salary' },
-  { href: '/whatsapp', icon: MessageCircle, label: 'WhatsApp' },
-  { href: '/settings', icon: MoreHorizontal, label: 'More' },
+  { href: '/dashboard', icon: LayoutDashboard, label: 'Home'    },
+  { href: '/members',   icon: Users,           label: 'Members' },
+  { href: '/payments',  icon: DollarSign,      label: 'Payments'},
+  { href: '/biometric', icon: Fingerprint,     label: 'Finger'  },
+  { href: '/settings',  icon: MoreHorizontal,  label: 'More'    },
 ]
 
 export default function MobileNav() {
@@ -37,16 +35,14 @@ export default function MobileNav() {
               key={item.href}
               href={item.href}
               className={cn(
-                'flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl transition-all min-w-[56px] relative',
+                'flex flex-col items-center gap-1 px-2 py-1.5 rounded-xl transition-all min-w-[48px] relative',
                 isActive ? 'text-white' : 'text-[var(--sidebar-foreground)] hover:text-white/60'
               )}
             >
               {isActive && (
-                <span className="absolute -top-2 left-1/2 -translate-x-1/2 w-8 h-0.5 bg-primary rounded-full" />
+                <span className="absolute -top-2 left-1/2 -translate-x-1/2 w-6 h-0.5 bg-primary rounded-full" />
               )}
-              <item.icon
-                className={cn('w-5 h-5', isActive && 'text-primary')}
-              />
+              <item.icon className={cn('w-5 h-5', isActive && 'text-primary')} />
               <span className="text-[10px] font-medium">{item.label}</span>
             </Link>
           )
