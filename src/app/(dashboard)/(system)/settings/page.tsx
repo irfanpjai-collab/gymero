@@ -14,12 +14,10 @@ import { createClient } from '@/lib/supabase/client'
 const TABS = ['General', 'Plans', 'Users'] as const
 type TabType = typeof TABS[number]
 
-interface GymSettings { 
-  name: string; 
-  address: string; 
-  phone: string; 
-  whatsappApiUrl: string; 
-  whatsappToken: string;
+interface GymSettings {
+  name: string;
+  address: string;
+  phone: string;
   admissionFee: number;
   gracePeriodDays: number;
 }
@@ -27,11 +25,9 @@ interface GymSettings {
 export default function SettingsPage() {
   const [tab, setTab] = useState<TabType>('General')
   const [settings, setSettings] = useState<GymSettings>({
-    name: 'Fitness Gym', 
-    address: '', 
-    phone: '', 
-    whatsappApiUrl: '', 
-    whatsappToken: '',
+    name: 'Fitness Gym',
+    address: '',
+    phone: '',
     admissionFee: 1000,
     gracePeriodDays: 180,
   })
@@ -176,22 +172,6 @@ export default function SettingsPage() {
               <div>
                 <Label>Grace Period (days)</Label>
                 <Input type="number" min={0} value={settings.gracePeriodDays} onChange={e => setSettings(s => ({...s, gracePeriodDays: Number(e.target.value)}))} className="mt-1" />
-              </div>
-            </div>
-          </div>
-          <div className="border-t border-border pt-5">
-            <div className="flex items-center gap-2 mb-4">
-              <Settings className="w-4 h-4 text-primary" />
-              <h3 className="text-foreground font-medium text-sm">WhatsApp API (Optional)</h3>
-            </div>
-            <div className="space-y-3">
-              <div>
-                <Label>WhatsApp API URL</Label>
-                <Input value={settings.whatsappApiUrl} onChange={e => setSettings(s => ({...s, whatsappApiUrl: e.target.value}))} className="mt-1" placeholder="https://api.whatsapp.com/..." />
-              </div>
-              <div>
-                <Label>API Token</Label>
-                <Input type="password" value={settings.whatsappToken} onChange={e => setSettings(s => ({...s, whatsappToken: e.target.value}))} className="mt-1" placeholder="Your API token" />
               </div>
             </div>
           </div>
