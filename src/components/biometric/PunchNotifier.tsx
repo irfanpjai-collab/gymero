@@ -1,15 +1,8 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
-import { toast } from 'sonner'
+import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-
-const PUNCH_LABELS: Record<number, string> = {
-  0: 'checked in',
-  1: 'checked out',
-  4: 'checked in (OT)',
-  5: 'checked out (OT)',
-}
+import { LogIn, LogOut, X, CircleCheck, CircleX, Phone, CreditCard, CalendarClock } from 'lucide-react'
 
 interface AttendanceLogRow {
   member_id: string | null
@@ -18,49 +11,184 @@ interface AttendanceLogRow {
   punch_type: number
 }
 
+interface PunchDetails {
+  fullName: string
+  memberNumber: number
+  mobile: string
+  punchType: number
+  timestamp: string
+  membershipStatus: 'active' | 'expired' | 'none'
+  expiryDate: string | null
+}
+
+const AUTO_DISMISS_MS = 9000
+
 /**
- * Mounted once in the dashboard layout — shows a toast for every fingerprint
- * punch no matter which page is open. Subscribes to Supabase Realtime changes
- * on attendance_logs (which the bridge writes to directly the instant it
- * detects a punch) rather than connecting to the bridge's own SSE stream —
- * so this works from anywhere with zero dependency on Tailscale/the bridge
- * being reachable. Independent of and doesn't touch the Biometric page's own
- * live feed, which still talks to the bridge directly.
+ * Mounted once in the dashboard layout — shows a large detail popup for every
+ * fingerprint punch no matter which page is open. Subscribes to Supabase
+ * Realtime changes on attendance_logs, so it works from anywhere with zero
+ * dependency on any device/bridge being reachable.
  */
 export default function PunchNotifier() {
-  const nameByUuidRef = useRef<Record<string, string>>({})
+  const [current, setCurrent] = useState<PunchDetails | null>(null)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     const supabase = createClient()
-
-    supabase.from('members').select('id, full_name').then(({ data }) => {
-      const map: Record<string, string> = {}
-      for (const m of data ?? []) map[m.id] = m.full_name
-      nameByUuidRef.current = map
-    })
 
     const channel = supabase
       .channel('attendance_logs_notifier')
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'attendance_logs' },
-        (payload) => {
+        async (payload) => {
           const row = payload.new as AttendanceLogRow
-          const name = row.member_id
-            ? nameByUuidRef.current[row.member_id] ?? `Member #${row.device_user_id}`
-            : `Member #${row.device_user_id}`
-          const action = PUNCH_LABELS[row.punch_type] ?? 'punched'
-          const time = new Date(row.punched_at).toLocaleTimeString('en-IN', {
-            hour: '2-digit', minute: '2-digit',
-          })
+          let details: PunchDetails
 
-          toast.success(`${name} ${action}`, { description: time })
+          try {
+            if (row.member_id) {
+              const [{ data: member }, { data: memberships }] = await Promise.all([
+                supabase.from('members').select('full_name, member_id, mobile').eq('id', row.member_id).maybeSingle(),
+                supabase
+                  .from('memberships')
+                  .select('status, expiry_date')
+                  .eq('member_id', row.member_id)
+                  .order('expiry_date', { ascending: false })
+                  .limit(1),
+              ])
+
+              const latest = memberships?.[0]
+              const today = new Date().toISOString().split('T')[0]
+              const active = !!latest && latest.status === 'active' && latest.expiry_date >= today
+
+              details = {
+                fullName: member?.full_name ?? `Member #${row.device_user_id}`,
+                memberNumber: member?.member_id ?? Number(row.device_user_id),
+                mobile: member?.mobile ?? '',
+                punchType: row.punch_type,
+                timestamp: row.punched_at,
+                membershipStatus: latest ? (active ? 'active' : 'expired') : 'none',
+                expiryDate: latest?.expiry_date ?? null,
+              }
+            } else {
+              details = {
+                fullName: `Unknown member (#${row.device_user_id})`,
+                memberNumber: Number(row.device_user_id) || 0,
+                mobile: '',
+                punchType: row.punch_type,
+                timestamp: row.punched_at,
+                membershipStatus: 'none',
+                expiryDate: null,
+              }
+            }
+          } catch {
+            details = {
+              fullName: `Member #${row.device_user_id}`,
+              memberNumber: Number(row.device_user_id) || 0,
+              mobile: '',
+              punchType: row.punch_type,
+              timestamp: row.punched_at,
+              membershipStatus: 'none',
+              expiryDate: null,
+            }
+          }
+
+          setCurrent(details)
+          if (timerRef.current) clearTimeout(timerRef.current)
+          timerRef.current = setTimeout(() => setCurrent(null), AUTO_DISMISS_MS)
         }
       )
       .subscribe()
 
-    return () => { supabase.removeChannel(channel) }
+    return () => {
+      supabase.removeChannel(channel)
+      if (timerRef.current) clearTimeout(timerRef.current)
+    }
   }, [])
 
-  return null
+  if (!current) return null
+
+  const isIn = current.punchType === 0 || current.punchType === 4
+  const time = new Date(current.timestamp).toLocaleTimeString('en-IN', {
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  })
+
+  const statusStyles =
+    current.membershipStatus === 'active'
+      ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+      : current.membershipStatus === 'expired'
+      ? 'text-red-400 bg-red-500/10 border-red-500/20'
+      : 'text-muted-foreground bg-muted/30 border-border'
+
+  return (
+    <div className="fixed top-6 right-6 z-[100] w-[50vw] max-w-2xl min-w-[400px] animate-in fade-in slide-in-from-top-4 duration-300">
+      <div className="bg-card border border-border rounded-2xl shadow-2xl shadow-black/50 overflow-hidden">
+        <div className={`px-6 py-4 flex items-center justify-between border-b border-border ${isIn ? 'bg-emerald-500/10' : 'bg-blue-500/10'}`}>
+          <div className="flex items-center gap-3 min-w-0">
+            <div className={`w-11 h-11 rounded-full flex items-center justify-center shrink-0 ${isIn ? 'bg-emerald-500/20' : 'bg-blue-500/20'}`}>
+              {isIn ? <LogIn className="w-5.5 h-5.5 text-emerald-400" /> : <LogOut className="w-5.5 h-5.5 text-blue-400" />}
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                {isIn ? 'Checked In' : 'Checked Out'}
+              </p>
+              <p className="text-xl font-bold text-foreground truncate">{current.fullName}</p>
+            </div>
+          </div>
+          <button onClick={() => setCurrent(null)} className="text-muted-foreground hover:text-foreground shrink-0 ml-3">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 grid grid-cols-2 gap-5">
+          <div className="flex items-center gap-2.5">
+            <CreditCard className="w-4 h-4 text-muted-foreground/70 shrink-0" />
+            <div>
+              <p className="text-[11px] text-muted-foreground uppercase tracking-wider">Member ID</p>
+              <p className="text-sm font-mono text-foreground">#{current.memberNumber}</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            <CalendarClock className="w-4 h-4 text-muted-foreground/70 shrink-0" />
+            <div>
+              <p className="text-[11px] text-muted-foreground uppercase tracking-wider">Time</p>
+              <p className="text-sm font-mono text-foreground">{time}</p>
+            </div>
+          </div>
+
+          {current.mobile && (
+            <div className="flex items-center gap-2.5">
+              <Phone className="w-4 h-4 text-muted-foreground/70 shrink-0" />
+              <div>
+                <p className="text-[11px] text-muted-foreground uppercase tracking-wider">Mobile</p>
+                <p className="text-sm text-foreground">{current.mobile}</p>
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center gap-2.5">
+            {current.membershipStatus === 'active'
+              ? <CircleCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+              : <CircleX className="w-4 h-4 text-muted-foreground/70 shrink-0" />}
+            <div>
+              <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-0.5">Membership</p>
+              <span className={`inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full border ${statusStyles}`}>
+                {current.membershipStatus === 'active' ? 'Active' : current.membershipStatus === 'expired' ? 'Expired' : 'No membership'}
+              </span>
+            </div>
+          </div>
+
+          {current.expiryDate && (
+            <div className="col-span-2 pt-1 border-t border-border">
+              <p className="text-[11px] text-muted-foreground uppercase tracking-wider mt-3 mb-0.5">Membership Expires</p>
+              <p className="text-sm text-foreground">
+                {new Date(current.expiryDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
 }
