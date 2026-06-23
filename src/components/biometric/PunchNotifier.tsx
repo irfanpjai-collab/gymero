@@ -40,8 +40,9 @@ export default function PunchNotifier() {
       .channel('attendance_logs_notifier')
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'attendance_logs' },
+        { event: '*', schema: 'public', table: 'attendance_logs' },
         async (payload) => {
+          if (payload.eventType !== 'INSERT') return
           const row = payload.new as AttendanceLogRow
           let details: PunchDetails
 
@@ -124,7 +125,7 @@ export default function PunchNotifier() {
       : 'text-muted-foreground bg-muted/30 border-border'
 
   return (
-    <div className="fixed top-4 left-4 right-4 sm:left-auto sm:top-6 sm:right-6 z-[100] sm:w-[50vw] sm:max-w-2xl sm:min-w-[400px] animate-in fade-in slide-in-from-top-4 duration-300">
+    <div className="fixed bottom-20 left-4 right-4 lg:bottom-6 lg:left-auto lg:right-6 z-[100] lg:w-[50vw] lg:max-w-2xl lg:min-w-[400px] animate-in fade-in slide-in-from-bottom-4 duration-300">
       <div className="bg-card border border-border rounded-2xl shadow-2xl shadow-black/50 overflow-hidden">
         <div className={`px-4 sm:px-6 py-4 flex items-center justify-between border-b border-border ${isIn ? 'bg-emerald-500/10' : 'bg-blue-500/10'}`}>
           <div className="flex items-center gap-3 min-w-0">
