@@ -17,18 +17,21 @@ import {
   Search,
   Clock,
   CircleX,
+  Calendar,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   getAdmsDevices,
   getAdmsCommandHistory,
-  getTodaysAttendanceLog,
+  getAttendanceLog,
+  getMembersAdmsStatus,
   queueEnroll,
   queueRemove,
   queueBlock,
   queueUnblock,
   type AdmsDevice,
   type AdmsCommand,
+  type MemberAdmsStatus,
 } from '@/app/actions/adms'
 import { getMembers } from '@/app/actions/members'
 import { createClient } from '@/lib/supabase/client'
@@ -58,30 +61,63 @@ function CommandStatusBadge({ status }: { status: AdmsCommand['status'] }) {
   )
 }
 
+function EnrolledBadge({ enrolled }: { enrolled: boolean }) {
+  return enrolled ? (
+    <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border text-emerald-400 bg-emerald-500/10 border-emerald-500/20">
+      <Fingerprint className="w-3 h-3" /> Enrolled
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border text-muted-foreground bg-muted/30 border-border">
+      <Fingerprint className="w-3 h-3" /> Not enrolled
+    </span>
+  )
+}
+
+function AccessBadge({ blocked }: { blocked: boolean }) {
+  return blocked ? (
+    <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border text-red-400 bg-red-500/10 border-red-500/20">
+      <Ban className="w-3 h-3" /> Blocked
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border text-emerald-400 bg-emerald-500/10 border-emerald-500/20">
+      <CircleCheck className="w-3 h-3" /> Active
+    </span>
+  )
+}
+
+function todayStr() {
+  return new Date().toISOString().split('T')[0]
+}
+
 export default function BiometricPage() {
   const [tab, setTab] = useState<'attendance' | 'members' | 'queue'>('attendance')
   const [devices, setDevices] = useState<AdmsDevice[]>([])
   const [attendance, setAttendance] = useState<BiometricAttendance[]>([])
   const [members, setMembers] = useState<Member[]>([])
   const [commands, setCommands] = useState<AdmsCommand[]>([])
+  const [admsStatus, setAdmsStatus] = useState<Record<number, MemberAdmsStatus>>({})
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [busyMemberId, setBusyMemberId] = useState<number | null>(null)
+  const [attendanceDate, setAttendanceDate] = useState(todayStr())
+  const [membershipFilter, setMembershipFilter] = useState<'all' | 'active' | 'expired' | 'none'>('all')
 
   // Shared fetch, no loading-spinner side effect — used both for the initial
   // load and for silent background refreshes triggered by Realtime events.
   const fetchData = useCallback(async () => {
-    const [d, att, m, cmds] = await Promise.all([
+    const [d, att, m, cmds, status] = await Promise.all([
       getAdmsDevices(),
-      getTodaysAttendanceLog(),
+      getAttendanceLog(attendanceDate),
       getMembers(),
       getAdmsCommandHistory(),
+      getMembersAdmsStatus(),
     ])
     setDevices(d)
     setAttendance(att)
     setMembers(m)
     setCommands(cmds)
-  }, [])
+    setAdmsStatus(status)
+  }, [attendanceDate])
 
   const loadAll = useCallback(async () => {
     setLoading(true)
@@ -131,6 +167,12 @@ export default function BiometricPage() {
   const filteredMembers = members.filter(m =>
     search ? m.full_name.toLowerCase().includes(search.toLowerCase()) || String(m.member_id).includes(search) : true
   )
+
+  const filteredAttendance = attendance.filter(a =>
+    membershipFilter === 'all' ? true : (a.membership_status ?? 'none') === membershipFilter
+  )
+
+  const isToday = attendanceDate === todayStr()
 
   if (loading) {
     return (
@@ -192,46 +234,87 @@ export default function BiometricPage() {
       </div>
 
       {tab === 'attendance' && (
-        <div className="bg-card rounded-2xl border border-border overflow-hidden">
-          <div className="px-5 py-4 border-b border-border">
-            <span className="text-foreground font-semibold text-sm">Today's Attendance</span>
-          </div>
-          {attendance.length === 0 ? (
-            <div className="flex flex-col items-center py-12">
-              <Fingerprint className="w-8 h-8 text-muted-foreground/40 mb-2" />
-              <p className="text-muted-foreground text-sm">No punches yet today</p>
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative">
+              <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/70 pointer-events-none" />
+              <input
+                type="date"
+                value={attendanceDate}
+                max={todayStr()}
+                onChange={e => setAttendanceDate(e.target.value)}
+                className="pl-9 pr-3 py-2 bg-card border border-border rounded-xl text-sm text-foreground"
+              />
             </div>
-          ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border">
-                  {['Member', 'Time', 'Type'].map(h => (
-                    <th key={h} className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {attendance.map((a, i) => (
-                  <tr key={`${a.user_id}-${a.timestamp}-${i}`} className="border-b border-border last:border-0">
-                    <td className="px-4 py-2.5 font-medium text-foreground">
-                      {a.crm_id ? (
-                        <Link href={`/members/${a.crm_id}`} className="hover:text-primary hover:underline transition-colors">
-                          {a.user_name ?? a.user_id}
-                        </Link>
-                      ) : (a.user_name ?? a.user_id)}
-                    </td>
-                    <td className="px-4 py-2.5 text-muted-foreground font-mono text-xs">{formatDateTime(a.timestamp)}</td>
-                    <td className="px-4 py-2.5">
-                      <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                        {a.punch === 0 ? <LogIn className="w-3.5 h-3.5 text-emerald-400" /> : <LogOut className="w-3.5 h-3.5 text-blue-400" />}
-                        {a.punch === 0 ? 'Check In' : 'Check Out'}
-                      </span>
-                    </td>
+            <button
+              onClick={() => setAttendanceDate(todayStr())}
+              disabled={isToday}
+              className="px-3 py-2 bg-card border border-border hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed rounded-xl text-sm text-muted-foreground transition-colors"
+            >
+              Today
+            </button>
+            <div className="flex gap-1 bg-card border border-border rounded-xl p-1">
+              {(['all', 'active', 'expired', 'none'] as const).map(f => (
+                <button key={f} onClick={() => setMembershipFilter(f)}
+                  className={`px-3 py-1 rounded-lg text-xs font-medium capitalize transition-all ${membershipFilter === f ? 'bg-primary text-white' : 'text-muted-foreground hover:text-foreground'}`}>
+                  {f === 'none' ? 'No membership' : f}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-card rounded-2xl border border-border overflow-hidden">
+            <div className="px-5 py-4 border-b border-border">
+              <span className="text-foreground font-semibold text-sm">
+                {isToday ? "Today's Attendance" : `Attendance — ${new Date(attendanceDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`}
+              </span>
+            </div>
+            {filteredAttendance.length === 0 ? (
+              <div className="flex flex-col items-center py-12">
+                <Fingerprint className="w-8 h-8 text-muted-foreground/40 mb-2" />
+                <p className="text-muted-foreground text-sm">No punches match this filter</p>
+              </div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border">
+                    {['Member', 'Time', 'Type', 'Membership'].map(h => (
+                      <th key={h} className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase">{h}</th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+                </thead>
+                <tbody>
+                  {filteredAttendance.map((a, i) => (
+                    <tr key={`${a.user_id}-${a.timestamp}-${i}`} className="border-b border-border last:border-0">
+                      <td className="px-4 py-2.5 font-medium text-foreground">
+                        {a.crm_id ? (
+                          <Link href={`/members/${a.crm_id}`} className="hover:text-primary hover:underline transition-colors">
+                            {a.user_name ?? a.user_id}
+                          </Link>
+                        ) : (a.user_name ?? a.user_id)}
+                      </td>
+                      <td className="px-4 py-2.5 text-muted-foreground font-mono text-xs">{formatDateTime(a.timestamp)}</td>
+                      <td className="px-4 py-2.5">
+                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                          {a.punch === 0 ? <LogIn className="w-3.5 h-3.5 text-emerald-400" /> : <LogOut className="w-3.5 h-3.5 text-blue-400" />}
+                          {a.punch === 0 ? 'Check In' : 'Check Out'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <span className={`inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full border ${
+                          a.membership_status === 'active' ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' :
+                          a.membership_status === 'expired' ? 'text-red-400 bg-red-500/10 border-red-500/20' :
+                          'text-muted-foreground bg-muted/30 border-border'
+                        }`}>
+                          {a.membership_status === 'active' ? 'Active' : a.membership_status === 'expired' ? 'Expired' : 'No membership'}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
         </div>
       )}
 
@@ -250,7 +333,7 @@ export default function BiometricPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border">
-                  {['Member', 'ID', '', ''].map((h, i) => (
+                  {['Member', 'ID', 'Fingerprint', 'Access', ''].map((h, i) => (
                     <th key={i} className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase">{h}</th>
                   ))}
                 </tr>
@@ -258,11 +341,14 @@ export default function BiometricPage() {
               <tbody>
                 {filteredMembers.map(m => {
                   const busy = busyMemberId === m.member_id
+                  const status = admsStatus[m.member_id] ?? { enrolled: false, blocked: false }
                   return (
                     <tr key={m.id} className="border-b border-border last:border-0 hover:bg-white/[0.02]">
                       <td className="px-4 py-2.5 font-medium text-foreground">{m.full_name}</td>
                       <td className="px-4 py-2.5 text-muted-foreground font-mono text-xs">#{m.member_id}</td>
-                      <td className="px-4 py-2.5 text-right" colSpan={2}>
+                      <td className="px-4 py-2.5"><EnrolledBadge enrolled={status.enrolled} /></td>
+                      <td className="px-4 py-2.5"><AccessBadge blocked={status.blocked} /></td>
+                      <td className="px-4 py-2.5 text-right">
                         <div className="flex items-center justify-end gap-3">
                           <button disabled={busy} onClick={() => handleAction('enroll', m)} className="inline-flex items-center gap-1 text-xs text-primary hover:text-primary/70 disabled:opacity-50">
                             <UserPlus className="w-3.5 h-3.5" /> Enroll
