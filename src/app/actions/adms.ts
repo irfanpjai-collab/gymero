@@ -81,37 +81,6 @@ export async function queueUnblock(memberId: number) {
   return queueCommand('unblock', memberId)
 }
 
-export async function getAdmsDevices(): Promise<AdmsDevice[]> {
-  try {
-    const supabase = await createClient()
-    const { data, error } = await supabase
-      .from('adms_devices')
-      .select('*')
-      .order('last_seen', { ascending: false })
-    if (error) throw error
-    return (data ?? []) as AdmsDevice[]
-  } catch (err) {
-    console.error('getAdmsDevices error:', err)
-    return []
-  }
-}
-
-export async function getAdmsCommandHistory(limit = 50): Promise<AdmsCommand[]> {
-  try {
-    const supabase = await createClient()
-    const { data, error } = await supabase
-      .from('adms_commands')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(limit)
-    if (error) throw error
-    return (data ?? []) as AdmsCommand[]
-  } catch (err) {
-    console.error('getAdmsCommandHistory error:', err)
-    return []
-  }
-}
-
 // Moved over from the removed biometric.ts — identical query. attendance_logs
 // doesn't care whether the pyzk bridge or the ADMS routes wrote to it.
 export interface MemberAdmsInfo {
@@ -166,9 +135,34 @@ export async function getMemberAdmsInfo(memberId: string): Promise<MemberAdmsInf
   }
 }
 
-// dateStr is a plain "YYYY-MM-DD" (e.g. from an <input type="date">); defaults
-// to today. Returns the full calendar day's punches, oldest cutoff inclusive.
-export async function getAttendanceLog(dateStr?: string): Promise<BiometricAttendance[]> {
+export interface MemberAdmsStatus {
+  enrolled: boolean
+  blocked: boolean
+}
+
+export interface MemberLite {
+  id: string
+  member_id: number
+  full_name: string
+}
+
+export interface BiometricPageData {
+  devices: AdmsDevice[]
+  attendance: BiometricAttendance[]
+  members: MemberLite[]
+  commands: AdmsCommand[]
+  admsStatus: Record<number, MemberAdmsStatus>
+}
+
+// Everything the Biometric page needs, in one round trip instead of five —
+// each separate server action call is its own client→server request, and on
+// Vercel that overhead dwarfs the actual (tiny) query cost at this data
+// scale. One shared connection here, fanned out internally instead.
+//
+// dateStr is a plain "YYYY-MM-DD" (e.g. from an <input type="date">);
+// defaults to today. Attendance covers that full calendar day.
+export async function getBiometricPageData(dateStr?: string): Promise<BiometricPageData> {
+  const empty: BiometricPageData = { devices: [], attendance: [], members: [], commands: [], admsStatus: {} }
   try {
     const supabase = await createClient()
     const dayStart = dateStr ? new Date(`${dateStr}T00:00:00`) : new Date()
@@ -176,21 +170,37 @@ export async function getAttendanceLog(dateStr?: string): Promise<BiometricAtten
     const dayEnd = new Date(dayStart)
     dayEnd.setDate(dayEnd.getDate() + 1)
 
-    const { data, error } = await supabase
-      .from('attendance_logs')
-      .select(`
-        device_user_id,
-        punched_at,
-        punch_type,
-        status,
-        member:members!attendance_logs_member_id_fkey(id, full_name, member_id)
-      `)
-      .gte('punched_at', dayStart.toISOString())
-      .lt('punched_at', dayEnd.toISOString())
-      .order('punched_at', { ascending: false })
-      .limit(200)
-
-    if (error) throw error
+    const [
+      { data: devices, error: devicesErr },
+      { data: attRows, error: attErr },
+      { data: members, error: membersErr },
+      { data: commands, error: commandsErr },
+      { data: doneCommands },
+      { data: punches },
+    ] = await Promise.all([
+      supabase.from('adms_devices').select('*').order('last_seen', { ascending: false }),
+      supabase
+        .from('attendance_logs')
+        .select(`
+          device_user_id,
+          punched_at,
+          punch_type,
+          status,
+          member:members!attendance_logs_member_id_fkey(id, full_name, member_id)
+        `)
+        .gte('punched_at', dayStart.toISOString())
+        .lt('punched_at', dayEnd.toISOString())
+        .order('punched_at', { ascending: false })
+        .limit(200),
+      supabase.from('members').select('id, member_id, full_name').order('member_id', { ascending: true }),
+      supabase.from('adms_commands').select('*').order('created_at', { ascending: false }).limit(50),
+      supabase.from('adms_commands').select('member_id, operation, created_at').eq('status', 'done').order('created_at', { ascending: true }),
+      supabase.from('attendance_logs').select('device_user_id'),
+    ])
+    if (devicesErr) throw devicesErr
+    if (attErr) throw attErr
+    if (membersErr) throw membersErr
+    if (commandsErr) throw commandsErr
 
     type Row = {
       device_user_id: string
@@ -199,24 +209,24 @@ export async function getAttendanceLog(dateStr?: string): Promise<BiometricAtten
       status: number | null
       member: { id: string; full_name: string; member_id: number } | null
     }
-    const rows = (data ?? []) as unknown as Row[]
+    const rows = (attRows ?? []) as unknown as Row[]
 
     const memberUuids = [...new Set(rows.map(r => r.member?.id).filter(Boolean))] as string[]
     const { data: memberships } = memberUuids.length
       ? await supabase.from('memberships').select('member_id, status, expiry_date').in('member_id', memberUuids)
       : { data: [] }
 
-    const lookup: Record<string, { status: string; expiry_date: string }> = {}
+    const membershipLookup: Record<string, { status: string; expiry_date: string }> = {}
     for (const m of memberships ?? []) {
-      const cur = lookup[m.member_id]
+      const cur = membershipLookup[m.member_id]
       if (!cur || (m.expiry_date ?? '') > (cur.expiry_date ?? '')) {
-        lookup[m.member_id] = { status: m.status, expiry_date: m.expiry_date }
+        membershipLookup[m.member_id] = { status: m.status, expiry_date: m.expiry_date }
       }
     }
     const today = new Date().toISOString().split('T')[0]
 
-    return rows.map((row): BiometricAttendance => {
-      const mem = row.member ? lookup[row.member.id] : undefined
+    const attendance: BiometricAttendance[] = rows.map((row) => {
+      const mem = row.member ? membershipLookup[row.member.id] : undefined
       const active = !!mem && mem.status === 'active' && mem.expiry_date >= today
       return {
         user_id:            row.device_user_id,
@@ -229,65 +239,45 @@ export async function getAttendanceLog(dateStr?: string): Promise<BiometricAtten
         expiry_date:        mem?.expiry_date,
       }
     })
-  } catch (err) {
-    console.error('getAttendanceLog error:', err)
-    return []
-  }
-}
 
-export interface MemberAdmsStatus {
-  enrolled: boolean
-  blocked: boolean
-}
-
-// Bulk version of getMemberAdmsInfo's status logic, for the Members list —
-// one pair of queries instead of one per member. "Enrolled" is true if the
-// member has ever punched in, or their most recent completed enroll/remove
-// command was an enroll. "Blocked" reflects the most recent completed
-// block/unblock command; defaults to unblocked if neither ever ran.
-export async function getMembersAdmsStatus(): Promise<Record<number, MemberAdmsStatus>> {
-  try {
-    const supabase = await createClient()
-    const [{ data: commands }, { data: attendance }] = await Promise.all([
-      supabase
-        .from('adms_commands')
-        .select('member_id, operation, created_at')
-        .eq('status', 'done')
-        .order('created_at', { ascending: true }),
-      supabase.from('attendance_logs').select('device_user_id'),
-    ])
-
+    // "Enrolled" is true if the member has ever punched in, or their most
+    // recent completed enroll/remove command was an enroll. "Blocked"
+    // reflects the most recent completed block/unblock command; defaults to
+    // unblocked if neither ever ran.
     const everPunched = new Set(
-      (attendance ?? []).map(a => Number(a.device_user_id)).filter(n => !Number.isNaN(n))
+      (punches ?? []).map(a => Number(a.device_user_id)).filter(n => !Number.isNaN(n))
     )
-
     const latestEnrollRemove: Record<number, 'enroll' | 'remove'> = {}
     const latestBlockUnblock: Record<number, 'block' | 'unblock'> = {}
-
-    for (const cmd of commands ?? []) {
+    for (const cmd of doneCommands ?? []) {
       if (cmd.operation === 'enroll' || cmd.operation === 'remove') {
         latestEnrollRemove[cmd.member_id] = cmd.operation
       } else if (cmd.operation === 'block' || cmd.operation === 'unblock') {
         latestBlockUnblock[cmd.member_id] = cmd.operation
       }
     }
-
-    const memberIds = new Set([
+    const statusMemberIds = new Set([
       ...everPunched,
       ...Object.keys(latestEnrollRemove).map(Number),
       ...Object.keys(latestBlockUnblock).map(Number),
     ])
-
-    const result: Record<number, MemberAdmsStatus> = {}
-    for (const id of memberIds) {
-      result[id] = {
+    const admsStatus: Record<number, MemberAdmsStatus> = {}
+    for (const id of statusMemberIds) {
+      admsStatus[id] = {
         enrolled: everPunched.has(id) || latestEnrollRemove[id] === 'enroll',
         blocked: latestBlockUnblock[id] === 'block',
       }
     }
-    return result
+
+    return {
+      devices: (devices ?? []) as AdmsDevice[],
+      attendance,
+      members: (members ?? []) as MemberLite[],
+      commands: (commands ?? []) as AdmsCommand[],
+      admsStatus,
+    }
   } catch (err) {
-    console.error('getMembersAdmsStatus error:', err)
-    return {}
+    console.error('getBiometricPageData error:', err)
+    return empty
   }
 }

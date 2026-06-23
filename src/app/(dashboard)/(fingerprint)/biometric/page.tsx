@@ -21,10 +21,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
-  getAdmsDevices,
-  getAdmsCommandHistory,
-  getAttendanceLog,
-  getMembersAdmsStatus,
+  getBiometricPageData,
   queueEnroll,
   queueRemove,
   queueBlock,
@@ -32,10 +29,10 @@ import {
   type AdmsDevice,
   type AdmsCommand,
   type MemberAdmsStatus,
+  type MemberLite,
 } from '@/app/actions/adms'
-import { getMembers } from '@/app/actions/members'
 import { createClient } from '@/lib/supabase/client'
-import type { BiometricAttendance, Member } from '@/types'
+import type { BiometricAttendance } from '@/types'
 
 function formatDateTime(iso: string | null) {
   if (!iso) return '—'
@@ -93,7 +90,7 @@ export default function BiometricPage() {
   const [tab, setTab] = useState<'attendance' | 'members' | 'queue'>('attendance')
   const [devices, setDevices] = useState<AdmsDevice[]>([])
   const [attendance, setAttendance] = useState<BiometricAttendance[]>([])
-  const [members, setMembers] = useState<Member[]>([])
+  const [members, setMembers] = useState<MemberLite[]>([])
   const [commands, setCommands] = useState<AdmsCommand[]>([])
   const [admsStatus, setAdmsStatus] = useState<Record<number, MemberAdmsStatus>>({})
   const [loading, setLoading] = useState(true)
@@ -104,19 +101,16 @@ export default function BiometricPage() {
 
   // Shared fetch, no loading-spinner side effect — used both for the initial
   // load and for silent background refreshes triggered by Realtime events.
+  // One combined server action instead of five separate ones — each call is
+  // its own client→server round trip, which used to dominate load time even
+  // though the underlying queries are individually fast.
   const fetchData = useCallback(async () => {
-    const [d, att, m, cmds, status] = await Promise.all([
-      getAdmsDevices(),
-      getAttendanceLog(attendanceDate),
-      getMembers(),
-      getAdmsCommandHistory(),
-      getMembersAdmsStatus(),
-    ])
-    setDevices(d)
-    setAttendance(att)
-    setMembers(m)
-    setCommands(cmds)
-    setAdmsStatus(status)
+    const data = await getBiometricPageData(attendanceDate)
+    setDevices(data.devices)
+    setAttendance(data.attendance)
+    setMembers(data.members)
+    setCommands(data.commands)
+    setAdmsStatus(data.admsStatus)
   }, [attendanceDate])
 
   const loadAll = useCallback(async () => {
@@ -149,7 +143,7 @@ export default function BiometricPage() {
 
   async function handleAction(
     action: 'enroll' | 'remove' | 'block' | 'unblock',
-    member: Member,
+    member: MemberLite,
   ) {
     setBusyMemberId(member.member_id)
     const res =
