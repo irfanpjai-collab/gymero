@@ -41,14 +41,8 @@ const RES     = PACKED ? process.resourcesPath : __dirname
 const CRM_DIR    = path.join(RES, 'crm')
 const CRM_SERVER = path.join(CRM_DIR, 'server.js')
 
-// Bridge: Python biometric server
-// Packaged:  resources/bridge/biometric-bridge.exe  (PyInstaller)
-// Dev mode:  biometric-bridge/main.py  (raw Python, next to electron/)
-const BRIDGE_DIR = path.join(RES, 'bridge')
-const BRIDGE_EXE = path.join(BRIDGE_DIR, 'biometric-bridge.exe')
-const BRIDGE_PY  = PACKED
-  ? path.join(BRIDGE_DIR, 'main.py')
-  : path.join(__dirname, '..', 'biometric-bridge', 'main.py')
+// No local biometric bridge anymore — the device pushes to the cloud (ADMS)
+// directly, so there's nothing local for this app to spawn for that purpose.
 
 // Tray icon
 const ICON_PATH = PACKED
@@ -60,9 +54,7 @@ const ICON_PATH = PACKED
 let tray        = null
 let settingsWin = null
 let crmProc     = null
-let bridgeProc  = null
 let crmReady    = false
-let bridgeReady = false
 
 // ── CRM server ─────────────────────────────────────────────────────────────────
 
@@ -76,10 +68,9 @@ function startCRM() {
     env: {
       ...process.env,
       ELECTRON_RUN_AS_NODE: '1',
-      PORT:           '3000',
-      NODE_ENV:       'production',
-      HOSTNAME:       '127.0.0.1',
-      AI_MONITOR_URL: 'http://localhost:8000',
+      PORT:     '3000',
+      NODE_ENV: 'production',
+      HOSTNAME: '127.0.0.1',
     },
   })
 
@@ -97,49 +88,15 @@ function startCRM() {
   })
 }
 
-// ── Biometric bridge ───────────────────────────────────────────────────────────
-
-function startBridge() {
-  if (bridgeProc) return
-
-  const { deviceIp = '192.168.1.201', devicePort = 4370 } = loadConfig()
-  const env = {
-    ...process.env,
-    DEVICE_HOST: deviceIp,
-    DEVICE_PORT: String(devicePort),
-    PORT: '8000',
-  }
-
-  if (fs.existsSync(BRIDGE_EXE)) {
-    bridgeProc = spawn(BRIDGE_EXE, [], { cwd: BRIDGE_DIR, env })
-  } else if (fs.existsSync(BRIDGE_PY)) {
-    bridgeProc = spawn('python', [BRIDGE_PY], { cwd: BRIDGE_DIR, env })
-  } else {
-    return // no bridge present — biometric just shows offline
-  }
-
-  // Give bridge a few seconds to bind its port before marking ready
-  setTimeout(() => {
-    if (bridgeProc) { bridgeReady = true; updateTray() }
-  }, 3000)
-
-  bridgeProc.on('exit', () => {
-    bridgeReady = false
-    bridgeProc = null
-    updateTray()
-  })
-}
-
 // ── Controls ───────────────────────────────────────────────────────────────────
 
 function stopAll() {
-  if (crmProc)    { crmProc.kill('SIGTERM');    crmProc    = null; crmReady    = false }
-  if (bridgeProc) { bridgeProc.kill('SIGTERM'); bridgeProc = null; bridgeReady = false }
+  if (crmProc) { crmProc.kill('SIGTERM'); crmProc = null; crmReady = false }
 }
 
 function restart() {
   stopAll()
-  setTimeout(() => { startCRM(); startBridge() }, 1500)
+  setTimeout(() => { startCRM() }, 1500)
 }
 
 // ── Health polling ─────────────────────────────────────────────────────────────
@@ -168,17 +125,12 @@ function updateTray() {
 
   tray.setToolTip(
     'Green Power CRM\n' +
-    `CRM:       ${crmReady    ? '● Running'   : '○ Starting…'}\n` +
-    `Biometric: ${bridgeReady ? '● Connected' : '○ Offline'  }`
+    `CRM: ${crmReady ? '● Running' : '○ Starting…'}`
   )
 
   tray.setContextMenu(Menu.buildFromTemplate([
     {
-      label:   `CRM Server    ${crmReady    ? '●' : '○'}  ${crmReady    ? 'Running'   : 'Starting…'}`,
-      enabled: false,
-    },
-    {
-      label:   `Biometric     ${bridgeReady ? '●' : '○'}  ${bridgeReady ? 'Connected' : 'Offline'  }`,
+      label:   `CRM Server    ${crmReady ? '●' : '○'}  ${crmReady ? 'Running' : 'Starting…'}`,
       enabled: false,
     },
     { type: 'separator' },
@@ -245,11 +197,8 @@ app.whenReady().then(() => {
 
   updateTray()
   startCRM()
-  startBridge()
 
-  // First run: open settings if device IP is not configured
   const cfg = loadConfig()
-  if (!cfg.deviceIp) openSettings()
 
   // Apply saved auto-start
   app.setLoginItemSettings({

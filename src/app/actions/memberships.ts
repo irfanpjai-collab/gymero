@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { requireRole } from '@/lib/auth'
 import { revalidatePath } from 'next/cache'
 import type { MembershipPlan } from '@/types'
 
@@ -31,6 +32,7 @@ export async function createMembership(data: {
   payment_method?: string
 }): Promise<{ error?: string; id?: string }> {
   try {
+    const profile = await requireRole(['admin', 'receptionist'])
     const supabase = await createClient()
 
     // Fetch plan to calculate expiry_date
@@ -58,6 +60,7 @@ export async function createMembership(data: {
         expiry_date: expiryDate.toISOString().slice(0, 10),
         amount: data.amount,
         status: 'active',
+        created_by: profile.user_id,
       })
       .select('id')
       .single()
@@ -66,7 +69,7 @@ export async function createMembership(data: {
 
     // Auto-record payment if payment_method is provided
     if (data.payment_method) {
-      await supabase.from('payments').insert({
+      const { error: paymentError } = await supabase.from('payments').insert({
         member_id: data.member_id,
         membership_id: (inserted as { id: string }).id,
         amount: data.amount,
@@ -74,7 +77,9 @@ export async function createMembership(data: {
         payment_type: 'membership',
         payment_date: data.start_date,
         notes: 'Auto-recorded on membership creation',
+        created_by: profile.user_id,
       })
+      if (paymentError) throw new Error(`Membership created but payment failed to record: ${paymentError.message}`)
     }
 
     revalidatePath('/members')
@@ -97,7 +102,30 @@ export async function renewMembership(
   }
 ): Promise<{ error?: string }> {
   try {
+    const profile = await requireRole(['admin', 'receptionist'])
     const supabase = await createClient()
+
+    // Find the latest active membership so a renewal can't shrink remaining paid time.
+    const { data: currentActive } = await supabase
+      .from('memberships')
+      .select('expiry_date')
+      .eq('member_id', memberId)
+      .eq('status', 'active')
+      .order('expiry_date', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    const requestedStart = new Date(data.start_date)
+    const currentExpiry = currentActive
+      ? new Date((currentActive as { expiry_date: string }).expiry_date)
+      : null
+
+    // If membership is still active (expiry in the future), extend from that expiry
+    // instead of from whatever start_date the client sent — prevents losing paid days
+    // on early renewal. A truly lapsed member (expiry already past) keeps the supplied date.
+    const effectiveStart =
+      currentExpiry && currentExpiry > requestedStart ? currentExpiry : requestedStart
+    const effectiveStartStr = effectiveStart.toISOString().slice(0, 10)
 
     // Mark existing active memberships as expired
     const { error: expireError } = await supabase
@@ -120,8 +148,7 @@ export async function renewMembership(
     }
 
     const durationMonths = (plan as { duration_months: number }).duration_months
-    const startDate = new Date(data.start_date)
-    const expiryDate = new Date(startDate)
+    const expiryDate = new Date(effectiveStart)
     expiryDate.setMonth(expiryDate.getMonth() + durationMonths)
 
     const { data: insertedMembership, error: insertError } = await supabase
@@ -129,10 +156,11 @@ export async function renewMembership(
       .insert({
         member_id: memberId,
         plan_id: data.plan_id,
-        start_date: data.start_date,
+        start_date: effectiveStartStr,
         expiry_date: expiryDate.toISOString().slice(0, 10),
         amount: data.amount,
         status: 'active',
+        created_by: profile.user_id,
       })
       .select('id')
       .single()
@@ -141,35 +169,42 @@ export async function renewMembership(
 
     // If admission fee is provided (lapsed member rejoining), update the member record
     if (data.admission_fee && data.admission_fee > 0) {
-      await supabase
+      const { error: feeError } = await supabase
         .from('members')
         .update({ admission_fee: data.admission_fee })
         .eq('id', memberId)
+      if (feeError) throw feeError
     }
 
     // Auto-record payments if payment_method is provided
     if (data.payment_method) {
       // 1. Membership payment
-      await supabase.from('payments').insert({
+      const { error: paymentError } = await supabase.from('payments').insert({
         member_id: memberId,
         membership_id: (insertedMembership as { id: string }).id,
         amount: data.amount,
         payment_method: data.payment_method,
         payment_type: 'membership',
-        payment_date: data.start_date,
+        payment_date: effectiveStartStr,
         notes: 'Auto-recorded on membership renewal',
+        created_by: profile.user_id,
       })
+      if (paymentError) throw new Error(`Membership renewed but payment failed to record: ${paymentError.message}`)
 
       // 2. Admission fee payment (if applicable)
       if (data.admission_fee && data.admission_fee > 0) {
-        await supabase.from('payments').insert({
+        const { error: admissionPaymentError } = await supabase.from('payments').insert({
           member_id: memberId,
           amount: data.admission_fee,
           payment_method: data.payment_method,
           payment_type: 'admission',
-          payment_date: data.start_date,
+          payment_date: effectiveStartStr,
           notes: 'Auto-recorded admission fee on membership renewal',
+          created_by: profile.user_id,
         })
+        if (admissionPaymentError) {
+          throw new Error(`Membership renewed but admission fee payment failed to record: ${admissionPaymentError.message}`)
+        }
       }
     }
 
@@ -187,6 +222,7 @@ export async function updatePlan(
   data: Partial<MembershipPlan>
 ): Promise<{ error?: string }> {
   try {
+    await requireRole(['admin'])
     const supabase = await createClient()
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -214,6 +250,7 @@ export async function createPlan(data: {
   description?: string
 }): Promise<{ error?: string }> {
   try {
+    await requireRole(['admin'])
     const supabase = await createClient()
 
     const { error } = await supabase.from('membership_plans').insert({

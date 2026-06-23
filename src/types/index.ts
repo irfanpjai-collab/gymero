@@ -97,70 +97,17 @@ export interface DashboardStats {
   dueToday: number
 }
 
-// ── Biometric Device (ESSL K90 Pro / ZKTeco) ────────────────
-
-export interface BiometricStatus {
-  connected: boolean
-  serial?:   string
-  host?:     string
-  error?:    string
-}
-
-export interface BiometricUser {
-  uid:       number
-  user_id:   string
-  name:      string
-  privilege: number   // 0=user, 14=admin
-}
+// ── Biometric attendance (ADMS — see src/app/actions/adms.ts) ──────────────
 
 export interface BiometricAttendance {
-  user_id:   string
-  timestamp: string
-  status:    number
-  punch:     number   // 0=check-in  1=check-out  4=OT-in  5=OT-out
-  user_name?: string  // resolved client-side from BiometricUser list
-}
-
-export interface BiometricSyncResult {
-  synced:   number
-  skipped:  number
-  total:    number
-  message:  string
-}
-
-export interface BiometricAccessRow {
-  device_uid:         number
-  device_user_id:     string
-  device_name:        string
-  group_id:           string           // "0" = blocked  "1" = allowed
-  crm_member_id:      string | null
-  crm_name:           string | null
-  membership_status:  string | null    // "active" | "expired" | "none" | null
-  expiry_date:        string | null
-  access:             'allowed' | 'blocked' | 'unmanaged'
-}
-
-export interface BiometricAccessSyncResult {
-  blocked:    string[]
-  unblocked:  string[]
-  already_ok: number
-  unmatched:  number
-  errors:     string[]
-  ran_at:     string
-}
-
-export interface BiometricPushStatus {
-  crm_id:     string
-  crm_name:   string
-  mobile:     string
-  on_device:  boolean
-  device_uid: number | null
-}
-
-export interface BiometricPushResult {
-  pushed:  number
-  failed:  number
-  results: { crm_id: string; name: string; success: boolean; uid?: number; error?: string }[]
+  user_id:            string              // device PIN == the member's human-readable member_id
+  timestamp:          string
+  status:             number
+  punch:              number              // 0=check-in  1=check-out  4=OT-in  5=OT-out
+  user_name?:         string
+  crm_id?:            string             // resolved CRM member UUID, for linking to /members/[id]
+  membership_status?: 'active' | 'expired' | 'none'
+  expiry_date?:       string
 }
 
 // ─────────────────────────────────────────────────────────────

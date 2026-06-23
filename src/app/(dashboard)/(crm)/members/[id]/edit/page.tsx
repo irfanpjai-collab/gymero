@@ -122,7 +122,10 @@ export default function EditMemberPage({ params }: { params: Params }) {
         <div>
           <h1 className="text-xl font-bold text-foreground">Edit Member</h1>
           <p className="text-muted-foreground text-xs mt-0.5">
-            #{member.member_id} · {member.full_name}
+            #{member.member_id} ·{' '}
+            <Link href={`/members/${id}`} className="hover:text-primary hover:underline transition-colors">
+              {member.full_name}
+            </Link>
           </p>
         </div>
       </div>

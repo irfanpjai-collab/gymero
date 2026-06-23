@@ -36,17 +36,19 @@ export async function getDashboardStats(): Promise<DashboardStats> {
         .select('id', { count: 'exact', head: true })
         .eq('status', 'active')
         .gte('expiry_date', todayStr),
-      // Truly expired: expired > 180 days ago
+      // Truly expired: expiry_date > 180 days ago. Derived from expiry_date rather than
+      // status='expired' — a member who simply never renews keeps status='active' forever
+      // (nothing flips it automatically), so relying on status alone undercounts.
       supabase
         .from('memberships')
         .select('id', { count: 'exact', head: true })
-        .eq('status', 'expired')
+        .neq('status', 'cancelled')
         .lt('expiry_date', gracePeriodStart),
-      // Grace period: expired within last 180 days
+      // Grace period: expiry_date within the last 180 days
       supabase
         .from('memberships')
         .select('id', { count: 'exact', head: true })
-        .eq('status', 'expired')
+        .neq('status', 'cancelled')
         .gte('expiry_date', gracePeriodStart)
         .lt('expiry_date', todayStr),
       supabase
@@ -128,7 +130,7 @@ export async function getGracePeriodMembers(
         expiry_date,
         member:members!memberships_member_id_fkey(*)
       `)
-      .eq('status', 'expired')
+      .neq('status', 'cancelled')
       .gte('expiry_date', gracePeriodStart)
       .lt('expiry_date', todayStr)
       .order('expiry_date', { ascending: false })

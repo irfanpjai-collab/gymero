@@ -13,13 +13,32 @@ import {
   Clock,
   Edit,
   AlertCircle,
+  Fingerprint,
+  LogIn,
+  LogOut,
+  ShieldCheck,
+  ShieldOff,
 } from 'lucide-react'
 import { getMember } from '@/app/actions/members'
 import { getPayments } from '@/app/actions/payments'
+import { getMemberAdmsInfo } from '@/app/actions/adms'
 import { formatDate, formatCurrency, getMembershipStatus, getStatusColor, getDaysUntilExpiry, getDaysSinceExpiry } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import RenewDialog from './renew-dialog'
 import type { Payment } from '@/types'
+
+const PUNCH_LABELS: Record<number, string> = {
+  0: 'Check In',
+  1: 'Check Out',
+  4: 'OT In',
+  5: 'OT Out',
+}
+
+function formatTime(iso: string) {
+  try {
+    return new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+  } catch { return iso }
+}
 
 type Params = Promise<{ id: string }>
 type SearchParams = Promise<{ renew?: string }>
@@ -77,7 +96,11 @@ export default async function MemberDetailPage({
   const { id } = await params
   const { renew } = await searchParams
 
-  const [member, payments] = await Promise.all([getMember(id), getPayments(id)])
+  const [member, payments, biometric] = await Promise.all([
+    getMember(id),
+    getPayments(id),
+    getMemberAdmsInfo(id),
+  ])
 
   if (!member) notFound()
 
@@ -196,6 +219,40 @@ export default async function MemberDetailPage({
             {member.notes && (
               <InfoRow icon={FileText} label="Notes" value={member.notes} />
             )}
+          </div>
+
+          {/* Biometric status */}
+          <div className="bg-card rounded-2xl border border-border p-5 space-y-3">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center">
+                <Fingerprint className="w-3.5 h-3.5 text-primary" />
+              </div>
+              <h2 className="text-sm font-semibold text-foreground">Biometric</h2>
+            </div>
+
+            {biometric.enrolled ? (
+              <Badge className="border text-xs text-green-400 bg-green-500/10 border-green-500/20 inline-flex items-center gap-1">
+                <ShieldCheck className="w-3 h-3" /> Fingerprint Enrolled
+              </Badge>
+            ) : (
+              <Badge className="border text-xs text-muted-foreground bg-slate-500/10 border-slate-500/20 inline-flex items-center gap-1">
+                <ShieldOff className="w-3 h-3" /> Not Enrolled
+              </Badge>
+            )}
+
+            <p className="text-xs text-muted-foreground">
+              {biometric.enrolled
+                ? `${biometric.checkIns.length} check-in record${biometric.checkIns.length !== 1 ? 's' : ''} on device`
+                : 'No fingerprint on file. Push this member to the device from the Biometric page.'}
+            </p>
+
+            <Link
+              href="/biometric"
+              className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline"
+            >
+              <Fingerprint className="w-3.5 h-3.5" />
+              Manage on Biometric page
+            </Link>
           </div>
         </div>
 
@@ -349,6 +406,74 @@ export default async function MemberDetailPage({
                         </td>
                       </tr>
                     ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Check-in history */}
+          <div className="bg-card rounded-2xl border border-border overflow-hidden">
+            <div className="px-5 py-4 border-b border-border flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center">
+                <Fingerprint className="w-3.5 h-3.5 text-primary" />
+              </div>
+              <h2 className="text-sm font-semibold text-foreground">Check-In History</h2>
+              {biometric.checkIns.length > 0 && (
+                <span className="ml-auto text-xs text-muted-foreground">
+                  {biometric.checkIns.length} record{biometric.checkIns.length !== 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
+
+            {biometric.checkIns.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 text-center px-6">
+                <Fingerprint className="w-10 h-10 text-muted-foreground/60 mb-3" />
+                <p className="text-muted-foreground text-sm font-medium">
+                  {biometric.enrolled ? 'No check-ins recorded yet' : 'Not enrolled on the device'}
+                </p>
+                <p className="text-muted-foreground/50 text-xs mt-1">
+                  Fingerprint punches will appear here once the member scans in.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto max-h-96 overflow-y-auto">
+                <table className="w-full text-sm min-w-[420px]">
+                  <thead>
+                    <tr className="border-b border-border bg-muted/20">
+                      <th className="text-left px-5 py-3 text-muted-foreground font-medium text-xs uppercase tracking-wider">
+                        Date
+                      </th>
+                      <th className="text-left px-4 py-3 text-muted-foreground font-medium text-xs uppercase tracking-wider">
+                        Time
+                      </th>
+                      <th className="text-left px-4 py-3 text-muted-foreground font-medium text-xs uppercase tracking-wider">
+                        Type
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {biometric.checkIns.map((c, i) => {
+                      const isIn = c.punch === 0 || c.punch === 4
+                      return (
+                        <tr key={`${c.timestamp}-${i}`} className="hover:bg-muted/40 transition-colors">
+                          <td className="px-5 py-3 text-muted-foreground whitespace-nowrap">
+                            {formatDate(c.timestamp)}
+                          </td>
+                          <td className="px-4 py-3 text-muted-foreground font-mono text-xs">
+                            {formatTime(c.timestamp)}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full font-medium ${
+                              isIn ? 'bg-green-500/15 text-green-400' : 'bg-blue-500/15 text-blue-400'
+                            }`}>
+                              {isIn ? <LogIn className="w-3 h-3" /> : <LogOut className="w-3 h-3" />}
+                              {PUNCH_LABELS[c.punch] ?? `Type ${c.punch}`}
+                            </span>
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>

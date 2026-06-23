@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { requireRole } from '@/lib/auth'
 import { revalidatePath } from 'next/cache'
 
 export interface DueMember {
@@ -138,6 +139,7 @@ export async function logWhatsAppMessage(
   type: string
 ): Promise<void> {
   try {
+    await requireRole(['admin', 'receptionist'])
     const supabase = await createClient()
 
     await supabase.from('whatsapp_logs').insert({

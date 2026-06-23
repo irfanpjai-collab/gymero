@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { BarChart3, Download, Users, DollarSign, TrendingUp } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
@@ -146,7 +147,11 @@ export default function ReportsPage() {
                     return (
                       <tr key={m.id} className="border-b border-border last:border-0 hover:bg-muted/20 transition-colors">
                         <td className="px-4 py-2.5 text-muted-foreground font-mono text-xs">#{m.member_id}</td>
-                        <td className="px-4 py-2.5 text-foreground font-medium">{m.full_name}</td>
+                        <td className="px-4 py-2.5 text-foreground font-medium">
+                          <Link href={`/members/${m.id}`} className="hover:text-primary hover:underline transition-colors">
+                            {m.full_name}
+                          </Link>
+                        </td>
                         <td className="px-4 py-2.5 text-muted-foreground">{m.mobile}</td>
                         <td className="px-4 py-2.5 text-muted-foreground">{formatDate(m.join_date)}</td>
                         <td className="px-4 py-2.5 text-muted-foreground">{m.active_membership ? formatDate(m.active_membership.expiry_date) : '—'}</td>

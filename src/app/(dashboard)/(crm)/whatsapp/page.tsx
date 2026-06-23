@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { MessageCircle, Send, Clock, AlertCircle, CheckCircle } from 'lucide-react'
 import { toast } from 'sonner'
 import { getDueMembers, getExpiredMembers, logWhatsAppMessage } from '@/app/actions/whatsapp'
@@ -36,7 +37,9 @@ function MemberReminderRow({ member, type }: { member: DueMember; type: 'due_tod
           <span className="text-foreground font-medium text-sm">{member.full_name.charAt(0).toUpperCase()}</span>
         </div>
         <div>
-          <div className="text-foreground font-medium text-sm">{member.full_name}</div>
+          <Link href={`/members/${member.id}`} className="text-foreground font-medium text-sm hover:text-primary hover:underline transition-colors">
+            {member.full_name}
+          </Link>
           <div className="text-muted-foreground text-xs flex items-center gap-2">
             <span>#{member.member_id}</span>
             <span>·</span>

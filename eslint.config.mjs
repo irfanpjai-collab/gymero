@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Build artifacts / non-source code that shouldn't be linted as project source:
+    "dist/**",
+    "electron/**",
+    "archive/**",
   ]),
 ]);
 

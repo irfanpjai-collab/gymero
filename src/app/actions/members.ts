@@ -1,8 +1,62 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { requireRole } from '@/lib/auth'
 import { revalidatePath } from 'next/cache'
 import type { Member, ImportMemberRow } from '@/types'
+
+// Queues an outbound-only ADMS enroll command — a plain DB insert, nothing
+// reaches out to the device at all from here. The device picks it up the next
+// time it polls /api/adms/getrequest on its own heartbeat (see supabase/adms.sql
+// and src/app/api/adms/getrequest/route.ts). A device that's offline right now
+// just means the row sits 'pending' until the device next checks in — no
+// retry logic needed on this side, the device's own polling *is* the retry.
+async function pushNewMembersToDevice(memberIds: string[], requestedBy?: string): Promise<void> {
+  if (memberIds.length === 0) return
+  try {
+    const supabase = await createClient()
+    const { data: members } = await supabase
+      .from('members')
+      .select('member_id, full_name')
+      .in('id', memberIds)
+
+    if (!members || members.length === 0) return
+
+    await supabase.from('adms_commands').insert(
+      members.map(m => ({
+        operation: 'enroll',
+        member_id: m.member_id,
+        full_name: m.full_name,
+        requested_by: requestedBy ?? null,
+      }))
+    )
+  } catch (err) {
+    console.error('Auto-push to device failed:', err)
+  }
+}
+
+// Same outbound-only queue, for removal. A deleted member's fingerprint must not
+// keep working — there's no separate access-sync job under ADMS, so a 'remove'
+// command is the only thing that revokes access for a deleted member.
+async function removeMemberFromDevice(memberId: number, requestedBy?: string): Promise<void> {
+  try {
+    const supabase = await createClient()
+    await supabase.from('adms_commands').insert({
+      operation: 'remove',
+      member_id: memberId,
+      requested_by: requestedBy ?? null,
+    })
+  } catch (err) {
+    console.error('Auto-remove from device failed:', err)
+  }
+}
+
+// PostgREST treats , . : ( ) as filter-grammar separators. Wrapping the value in
+// double quotes (escaping backslashes/quotes inside it) stops user search input
+// from breaking out into extra .or() clauses.
+function escapePostgrestValue(value: string): string {
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+}
 
 export async function getMembers(search?: string): Promise<Member[]> {
   try {
@@ -20,8 +74,9 @@ export async function getMembers(search?: string): Promise<Member[]> {
       .order('member_id', { ascending: true })
 
     if (search) {
+      const pattern = escapePostgrestValue(`%${search}%`)
       query = query.or(
-        `full_name.ilike.%${search}%,mobile.ilike.%${search}%,member_id.eq.${Number(search) || 0}`
+        `full_name.ilike.${pattern},mobile.ilike.${pattern},member_id.eq.${Number(search) || 0}`
       )
     }
 
@@ -79,6 +134,7 @@ export async function createMember(
   data: FormData
 ): Promise<{ error?: string; memberId?: string }> {
   try {
+    const profile = await requireRole(['admin', 'receptionist'])
     const supabase = await createClient()
 
     // Get next member_id
@@ -139,6 +195,8 @@ export async function createMember(
       })
     }
 
+    await pushNewMembersToDevice([(inserted as { id: string }).id], profile.user_id)
+
     revalidatePath('/members')
     revalidatePath('/payments')
     return { memberId: (inserted as { id: string }).id }
@@ -153,6 +211,7 @@ export async function updateMember(
   data: FormData
 ): Promise<{ error?: string }> {
   try {
+    await requireRole(['admin', 'receptionist'])
     const supabase = await createClient()
 
     const payload: Record<string, unknown> = {}
@@ -179,11 +238,22 @@ export async function updateMember(
 
 export async function deleteMember(id: string): Promise<{ error?: string }> {
   try {
+    const profile = await requireRole(['admin'])
     const supabase = await createClient()
+
+    // Fetch member_id before deleting — needed to find their device entry, and
+    // unavailable afterward.
+    const { data: existing } = await supabase
+      .from('members')
+      .select('member_id')
+      .eq('id', id)
+      .single()
 
     const { error } = await supabase.from('members').delete().eq('id', id)
 
     if (error) throw error
+
+    if (existing) await removeMemberFromDevice((existing as { member_id: number }).member_id, profile.user_id)
 
     revalidatePath('/members')
     return {}
@@ -196,20 +266,32 @@ export async function deleteMember(id: string): Promise<{ error?: string }> {
 export async function importMembers(
   rows: ImportMemberRow[]
 ): Promise<{ imported: number; errors: string[] }> {
-  const supabase = await createClient()
   let imported = 0
   const errors: string[] = []
+  const newMemberIds: string[] = []
 
-  // Fetch all plans once for lookup
-  const { data: plans } = await supabase
-    .from('membership_plans')
-    .select('id, name')
+  let supabase: Awaited<ReturnType<typeof createClient>>
+  let planMap: Record<string, string> = {}
+  let requestedBy: string | undefined
+  try {
+    const profile = await requireRole(['admin', 'receptionist'])
+    requestedBy = profile.user_id
+    supabase = await createClient()
 
-  const planMap: Record<string, string> = {}
-  if (plans) {
-    for (const plan of plans as { id: string; name: string }[]) {
-      planMap[plan.name.toLowerCase()] = plan.id
+    // Fetch all plans once for lookup
+    const { data: plans } = await supabase
+      .from('membership_plans')
+      .select('id, name')
+
+    if (plans) {
+      planMap = {}
+      for (const plan of plans as { id: string; name: string }[]) {
+        planMap[plan.name.toLowerCase()] = plan.id
+      }
     }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return { imported: 0, errors: [message] }
   }
 
   for (const row of rows) {
@@ -248,22 +330,30 @@ export async function importMembers(
         }
       } else {
         memberId = (insertedMember as { id: string }).id
+        newMemberIds.push(memberId) // only genuinely new inserts, not re-imported existing members
       }
 
-      // Create membership if expiry_date is provided
+      // Create membership if expiry_date is provided (amount must be > 0 — DB constraint)
       if (memberId && row.expiry_date) {
-        const planId = row.plan_name ? planMap[row.plan_name.toLowerCase()] : null
+        if (!row.amount_paid || row.amount_paid <= 0) {
+          errors.push(`Row ${row.member_id ?? row.full_name}: member imported, but membership skipped (amount_paid must be greater than 0)`)
+        } else {
+          const planId = row.plan_name ? planMap[row.plan_name.toLowerCase()] : null
 
-        const membershipPayload: Record<string, unknown> = {
-          member_id: memberId,
-          expiry_date: row.expiry_date,
-          start_date: row.join_date ?? new Date().toISOString().slice(0, 10),
-          amount: row.amount_paid ?? 0,
-          status: new Date(row.expiry_date) >= new Date() ? 'active' : 'expired',
+          const membershipPayload: Record<string, unknown> = {
+            member_id: memberId,
+            expiry_date: row.expiry_date,
+            start_date: row.join_date ?? new Date().toISOString().slice(0, 10),
+            amount: row.amount_paid,
+            status: new Date(row.expiry_date) >= new Date() ? 'active' : 'expired',
+          }
+          if (planId) membershipPayload.plan_id = planId
+
+          const { error: membershipError } = await supabase.from('memberships').insert(membershipPayload)
+          if (membershipError) {
+            errors.push(`Row ${row.member_id ?? row.full_name}: member imported, but membership failed (${membershipError.message})`)
+          }
         }
-        if (planId) membershipPayload.plan_id = planId
-
-        await supabase.from('memberships').insert(membershipPayload)
       }
 
       imported++
@@ -272,6 +362,8 @@ export async function importMembers(
       errors.push(`Row ${row.member_id ?? row.full_name}: ${message}`)
     }
   }
+
+  await pushNewMembersToDevice(newMemberIds, requestedBy)
 
   revalidatePath('/members')
   return { imported, errors }

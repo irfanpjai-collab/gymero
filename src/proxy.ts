@@ -23,6 +23,14 @@ export async function proxy(request: NextRequest) {
     }
   )
 
+  // API routes handle their own auth (CRON_SECRET, the ADMS device's serial-number
+  // allowlist, etc.) and must never be redirected to an HTML /login page — a
+  // redirect response is meaningless to a cron caller or a physical device polling
+  // for plain-text responses, and would silently break them with no clear error.
+  if (request.nextUrl.pathname.startsWith('/api/')) {
+    return supabaseResponse
+  }
+
   const {
     data: { user },
   } = await supabase.auth.getUser()

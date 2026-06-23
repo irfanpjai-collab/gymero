@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { requireRole } from '@/lib/auth'
 import { revalidatePath } from 'next/cache'
 
 export interface StaffSalary {
@@ -55,6 +56,7 @@ export async function createSalary(data: {
   notes?: string
 }): Promise<{ error?: string }> {
   try {
+    const profile = await requireRole(['admin'])
     const supabase = await createClient()
     const { error } = await supabase.from('staff_salaries').insert({
       staff_name: data.staff_name,
@@ -66,6 +68,7 @@ export async function createSalary(data: {
       deductions: data.deductions ?? 0,
       notes: data.notes ?? null,
       status: 'pending',
+      created_by: profile.user_id,
     })
     if (error) throw error
     revalidatePath('/salary')
@@ -78,6 +81,7 @@ export async function createSalary(data: {
 
 export async function markSalaryPaid(id: string): Promise<{ error?: string }> {
   try {
+    await requireRole(['admin'])
     const supabase = await createClient()
     const { error } = await supabase
       .from('staff_salaries')
@@ -97,6 +101,7 @@ export async function updateSalary(
   data: Partial<Pick<StaffSalary, 'base_salary' | 'bonus' | 'deductions' | 'notes' | 'status'>>
 ): Promise<{ error?: string }> {
   try {
+    await requireRole(['admin'])
     const supabase = await createClient()
     const { error } = await supabase
       .from('staff_salaries')
@@ -113,6 +118,7 @@ export async function updateSalary(
 
 export async function deleteSalary(id: string): Promise<{ error?: string }> {
   try {
+    await requireRole(['admin'])
     const supabase = await createClient()
     const { error } = await supabase.from('staff_salaries').delete().eq('id', id)
     if (error) throw error

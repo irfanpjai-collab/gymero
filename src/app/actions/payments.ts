@@ -1,6 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { requireRole } from '@/lib/auth'
 import { revalidatePath } from 'next/cache'
 import type { Payment } from '@/types'
 
@@ -44,6 +45,7 @@ export async function recordPayment(data: {
   notes?: string
 }): Promise<{ error?: string; payment?: Payment }> {
   try {
+    const profile = await requireRole(['admin', 'receptionist'])
     const supabase = await createClient()
 
     const payload: Record<string, unknown> = {
@@ -52,6 +54,7 @@ export async function recordPayment(data: {
       payment_method: data.payment_method,
       payment_type: data.payment_type || 'membership',
       payment_date: data.payment_date,
+      created_by: profile.user_id,
     }
 
     if (data.membership_id) payload.membership_id = data.membership_id

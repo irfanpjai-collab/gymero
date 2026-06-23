@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useTransition } from 'react'
+import Link from 'next/link'
 import {
   Users,
   Plus,
@@ -172,7 +173,9 @@ function CoachCard({ coach }: { coach: Coach }) {
             <div className="space-y-2">
               {members.map((m) => (
                 <div key={m.id} className="flex items-center justify-between text-xs bg-muted/50 rounded-lg px-3 py-2">
-                  <span className="text-foreground font-medium">{m.full_name}</span>
+                  <Link href={`/members/${m.id}`} className="text-foreground font-medium hover:text-primary hover:underline transition-colors">
+                    {m.full_name}
+                  </Link>
                   <span className="text-muted-foreground">#{m.member_id} · {m.mobile}</span>
                 </div>
               ))}

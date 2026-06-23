@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useTransition } from 'react'
+import Link from 'next/link'
 import {
   CreditCard,
   Plus,
@@ -346,7 +347,13 @@ export default function PaymentsPage() {
                     <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{formatDate(p.payment_date)}</td>
                     <td className="px-4 py-3">
                       <div>
-                        <p className="text-foreground font-medium">{p.member?.full_name ?? '—'}</p>
+                        {p.member?.full_name ? (
+                          <Link href={`/members/${p.member_id}`} className="text-foreground font-medium hover:text-primary hover:underline transition-colors">
+                            {p.member.full_name}
+                          </Link>
+                        ) : (
+                          <p className="text-foreground font-medium">—</p>
+                        )}
                         <p className="text-xs text-muted-foreground">#{p.member?.member_id}</p>
                       </div>
                     </td>

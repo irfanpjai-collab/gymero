@@ -13,6 +13,7 @@ import {
   Wallet,
   MessageCircle,
   BarChart3,
+  FileSpreadsheet,
   Settings,
   LogOut,
   Fingerprint,
@@ -41,6 +42,7 @@ const navGroups: NavGroup[] = [
       { href: '/salary',      icon: Wallet,          label: 'Salary'      },
       { href: '/whatsapp',    icon: MessageCircle,   label: 'WhatsApp'    },
       { href: '/reports',     icon: BarChart3,       label: 'Reports'     },
+      { href: '/documents',   icon: FileSpreadsheet, label: 'Document Center' },
     ],
   },
   {

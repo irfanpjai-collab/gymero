@@ -1,13 +1,14 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Settings, CreditCard, Users, Save, Building } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Settings, CreditCard, Users, Save, Building, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { getPlans, createPlan, updatePlan } from '@/app/actions/memberships'
+import { createStaffUser } from '@/app/actions/staff'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
-import type { MembershipPlan } from '@/types'
+import type { MembershipPlan, UserRole } from '@/types'
 import { createClient } from '@/lib/supabase/client'
 
 const TABS = ['General', 'Plans', 'Users'] as const
@@ -36,11 +37,23 @@ export default function SettingsPage() {
   })
   const [plans, setPlans] = useState<MembershipPlan[]>([])
   const [users, setUsers] = useState<{ id: string; name: string; email: string; role: string }[]>([])
+  const [currentRole, setCurrentRole] = useState<UserRole | null>(null)
   const [editPlanId, setEditPlanId] = useState<string | null>(null)
   const [editPlanValues, setEditPlanValues] = useState<Partial<MembershipPlan>>({})
   const [newPlan, setNewPlan] = useState({ name: '', duration_months: 1, fee: 0, description: '' })
   const [showAddPlan, setShowAddPlan] = useState(false)
+  const [showAddUser, setShowAddUser] = useState(false)
+  const [newUser, setNewUser] = useState<{ name: string; email: string; password: string; role: UserRole }>({
+    name: '', email: '', password: '', role: 'receptionist',
+  })
   const [saving, setSaving] = useState(false)
+  const [creatingUser, setCreatingUser] = useState(false)
+
+  const fetchUsers = useCallback(async () => {
+    const supabase = createClient()
+    const { data } = await supabase.from('user_profiles').select('*')
+    if (data) setUsers(data)
+  }, [])
 
   useEffect(() => {
     const saved = localStorage.getItem('gym_settings')
@@ -54,11 +67,37 @@ export default function SettingsPage() {
       }))
     }
     getPlans().then(setPlans)
+    fetchUsers()
+
     const supabase = createClient()
-    supabase.from('user_profiles').select('*').then(({ data }) => {
-      if (data) setUsers(data)
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) return
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('role')
+        .eq('user_id', user.id)
+        .single()
+      if (profile) setCurrentRole(profile.role as UserRole)
     })
-  }, [])
+  }, [fetchUsers])
+
+  async function handleAddUser() {
+    if (!newUser.name || !newUser.email || !newUser.password) {
+      toast.error('Fill in all fields')
+      return
+    }
+    setCreatingUser(true)
+    const result = await createStaffUser(newUser)
+    if (result.error) {
+      toast.error(result.error)
+    } else {
+      toast.success('User created')
+      setShowAddUser(false)
+      setNewUser({ name: '', email: '', password: '', role: 'receptionist' })
+      fetchUsers()
+    }
+    setCreatingUser(false)
+  }
 
   function saveSettings() {
     localStorage.setItem('gym_settings', JSON.stringify(settings))
@@ -209,8 +248,47 @@ export default function SettingsPage() {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-foreground font-semibold">System Users</h2>
-            <a href="/signup" className="text-sm text-primary hover:text-primary/70 transition-colors">+ Invite User</a>
+            {currentRole === 'admin' && (
+              <Button size="sm" onClick={() => setShowAddUser(v => !v)}>+ Add User</Button>
+            )}
           </div>
+
+          {showAddUser && currentRole === 'admin' && (
+            <div className="bg-card rounded-2xl border border-primary/30 p-5 space-y-4">
+              <h3 className="text-foreground font-medium text-sm">New Staff Account</h3>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <Label>Full Name</Label>
+                  <Input value={newUser.name} onChange={e => setNewUser(u => ({ ...u, name: e.target.value }))} className="mt-1" placeholder="John Smith" />
+                </div>
+                <div>
+                  <Label>Email</Label>
+                  <Input type="email" value={newUser.email} onChange={e => setNewUser(u => ({ ...u, email: e.target.value }))} className="mt-1" placeholder="staff@fitness.gym" />
+                </div>
+                <div>
+                  <Label>Password</Label>
+                  <Input type="password" value={newUser.password} onChange={e => setNewUser(u => ({ ...u, password: e.target.value }))} className="mt-1" placeholder="Min. 6 characters" />
+                </div>
+                <div>
+                  <Label>Role</Label>
+                  <select
+                    value={newUser.role}
+                    onChange={e => setNewUser(u => ({ ...u, role: e.target.value as UserRole }))}
+                    className="mt-1 w-full h-9 px-3 bg-background border border-border rounded-md text-sm text-foreground"
+                  >
+                    <option value="admin">Admin</option>
+                    <option value="receptionist">Receptionist</option>
+                    <option value="coach">Coach</option>
+                  </select>
+                </div>
+              </div>
+              <Button onClick={handleAddUser} disabled={creatingUser}>
+                {creatingUser ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                Create Account
+              </Button>
+            </div>
+          )}
+
           <div className="bg-card rounded-2xl border border-border overflow-hidden">
             {users.length === 0 ? (
               <div className="flex flex-col items-center py-12">
