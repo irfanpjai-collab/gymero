@@ -50,3 +50,47 @@ export async function createStaffUser(data: {
     return { error: message }
   }
 }
+
+// Deletes the Auth login; user_profiles row cascades via its
+// ON DELETE CASCADE foreign key (see schema.sql).
+export async function deleteStaffUser(userId: string): Promise<{ error?: string }> {
+  try {
+    const profile = await requireRole(['admin'])
+
+    if (userId === profile.user_id) {
+      return { error: "You can't delete your own account" }
+    }
+
+    const admin = createAdminClient()
+    const { error } = await admin.auth.admin.deleteUser(userId)
+    if (error) throw error
+
+    revalidatePath('/settings')
+    return {}
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return { error: message }
+  }
+}
+
+export async function resetStaffPassword(
+  userId: string,
+  newPassword: string,
+): Promise<{ error?: string }> {
+  try {
+    await requireRole(['admin'])
+
+    if (newPassword.length < 6) {
+      return { error: 'Password must be at least 6 characters' }
+    }
+
+    const admin = createAdminClient()
+    const { error } = await admin.auth.admin.updateUserById(userId, { password: newPassword })
+    if (error) throw error
+
+    return {}
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return { error: message }
+  }
+}

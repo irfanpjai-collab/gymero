@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { Settings, CreditCard, Users, Save, Building, Loader2 } from 'lucide-react'
+import { useState, useEffect, useCallback, Fragment } from 'react'
+import { Settings, CreditCard, Users, Save, Building, Loader2, Trash2, KeyRound } from 'lucide-react'
 import { toast } from 'sonner'
 import { getPlans, createPlan, updatePlan } from '@/app/actions/memberships'
-import { createStaffUser } from '@/app/actions/staff'
+import { createStaffUser, deleteStaffUser, resetStaffPassword } from '@/app/actions/staff'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
@@ -32,8 +32,13 @@ export default function SettingsPage() {
     gracePeriodDays: 180,
   })
   const [plans, setPlans] = useState<MembershipPlan[]>([])
-  const [users, setUsers] = useState<{ id: string; name: string; email: string; role: string }[]>([])
+  const [users, setUsers] = useState<{ id: string; user_id: string; name: string; email: string; role: string }[]>([])
   const [currentRole, setCurrentRole] = useState<UserRole | null>(null)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
+  const [deletingUserId, setDeletingUserId] = useState<string | null>(null)
+  const [resetPasswordUserId, setResetPasswordUserId] = useState<string | null>(null)
+  const [resetPasswordValue, setResetPasswordValue] = useState('')
+  const [resettingPassword, setResettingPassword] = useState(false)
   const [editPlanId, setEditPlanId] = useState<string | null>(null)
   const [editPlanValues, setEditPlanValues] = useState<Partial<MembershipPlan>>({})
   const [newPlan, setNewPlan] = useState({ name: '', duration_months: 1, fee: 0, description: '' })
@@ -68,6 +73,7 @@ export default function SettingsPage() {
     const supabase = createClient()
     supabase.auth.getUser().then(async ({ data: { user } }) => {
       if (!user) return
+      setCurrentUserId(user.id)
       const { data: profile } = await supabase
         .from('user_profiles')
         .select('role')
@@ -76,6 +82,34 @@ export default function SettingsPage() {
       if (profile) setCurrentRole(profile.role as UserRole)
     })
   }, [fetchUsers])
+
+  async function handleDeleteUser(userId: string, name: string) {
+    if (!confirm(`Delete staff account "${name || 'this user'}"? This cannot be undone.`)) return
+    setDeletingUserId(userId)
+    const result = await deleteStaffUser(userId)
+    if (result.error) toast.error(result.error)
+    else {
+      toast.success('User deleted')
+      fetchUsers()
+    }
+    setDeletingUserId(null)
+  }
+
+  async function handleResetPassword(userId: string) {
+    if (resetPasswordValue.length < 6) {
+      toast.error('Password must be at least 6 characters')
+      return
+    }
+    setResettingPassword(true)
+    const result = await resetStaffPassword(userId, resetPasswordValue)
+    if (result.error) toast.error(result.error)
+    else {
+      toast.success('Password reset')
+      setResetPasswordUserId(null)
+      setResetPasswordValue('')
+    }
+    setResettingPassword(false)
+  }
 
   async function handleAddUser() {
     if (!newUser.name || !newUser.email || !newUser.password) {
@@ -279,20 +313,62 @@ export default function SettingsPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border">
-                    {['Name', 'Email', 'Role'].map(h => (
-                      <th key={h} className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase">{h}</th>
+                    {['Name', 'Email', 'Role', currentRole === 'admin' ? 'Actions' : ''].map((h, i) => (
+                      <th key={i} className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {users.map(u => (
-                    <tr key={u.id} className="border-b border-border last:border-0 hover:bg-muted/40 transition-colors">
-                      <td className="px-4 py-3 text-foreground font-medium">{u.name || '—'}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{u.email}</td>
-                      <td className="px-4 py-3">
-                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full border capitalize ${roleColors[u.role] ?? 'text-[#6b8f6b]'}`}>{u.role}</span>
-                      </td>
-                    </tr>
+                    <Fragment key={u.id}>
+                      <tr className="border-b border-border last:border-0 hover:bg-muted/40 transition-colors">
+                        <td className="px-4 py-3 text-foreground font-medium">{u.name || '—'}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{u.email}</td>
+                        <td className="px-4 py-3">
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full border capitalize ${roleColors[u.role] ?? 'text-[#6b8f6b]'}`}>{u.role}</span>
+                        </td>
+                        {currentRole === 'admin' && (
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-3">
+                              <button
+                                onClick={() => { setResetPasswordUserId(resetPasswordUserId === u.user_id ? null : u.user_id); setResetPasswordValue('') }}
+                                className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300"
+                              >
+                                <KeyRound className="w-3.5 h-3.5" /> Reset Password
+                              </button>
+                              {u.user_id !== currentUserId && (
+                                <button
+                                  disabled={deletingUserId === u.user_id}
+                                  onClick={() => handleDeleteUser(u.user_id, u.name)}
+                                  className="inline-flex items-center gap-1 text-xs text-red-400 hover:text-red-300 disabled:opacity-50"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" /> Delete
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        )}
+                      </tr>
+                      {resetPasswordUserId === u.user_id && (
+                        <tr className="border-b border-border last:border-0 bg-muted/20">
+                          <td colSpan={4} className="px-4 py-3">
+                            <div className="flex items-center gap-2 max-w-sm">
+                              <Input
+                                type="password"
+                                value={resetPasswordValue}
+                                onChange={e => setResetPasswordValue(e.target.value)}
+                                placeholder="New password (min. 6 characters)"
+                                className="h-8 text-sm"
+                              />
+                              <Button size="sm" onClick={() => handleResetPassword(u.user_id)} disabled={resettingPassword}>
+                                {resettingPassword ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Save'}
+                              </Button>
+                              <Button size="sm" variant="outline" onClick={() => setResetPasswordUserId(null)}>Cancel</Button>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
