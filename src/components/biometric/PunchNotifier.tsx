@@ -93,12 +93,15 @@ export default function PunchNotifier() {
             }
           }
 
+          console.log('[PunchNotifier] new attendance row, showing popup for', details.fullName)
           setCurrent(details)
           if (timerRef.current) clearTimeout(timerRef.current)
           timerRef.current = setTimeout(() => setCurrent(null), AUTO_DISMISS_MS)
         }
       )
-      .subscribe()
+      .subscribe((status) => {
+        console.log('[PunchNotifier] realtime channel status:', status)
+      })
 
     return () => {
       supabase.removeChannel(channel)
@@ -121,18 +124,18 @@ export default function PunchNotifier() {
       : 'text-muted-foreground bg-muted/30 border-border'
 
   return (
-    <div className="fixed top-6 right-6 z-[100] w-[50vw] max-w-2xl min-w-[400px] animate-in fade-in slide-in-from-top-4 duration-300">
+    <div className="fixed top-4 left-4 right-4 sm:left-auto sm:top-6 sm:right-6 z-[100] sm:w-[50vw] sm:max-w-2xl sm:min-w-[400px] animate-in fade-in slide-in-from-top-4 duration-300">
       <div className="bg-card border border-border rounded-2xl shadow-2xl shadow-black/50 overflow-hidden">
-        <div className={`px-6 py-4 flex items-center justify-between border-b border-border ${isIn ? 'bg-emerald-500/10' : 'bg-blue-500/10'}`}>
+        <div className={`px-4 sm:px-6 py-4 flex items-center justify-between border-b border-border ${isIn ? 'bg-emerald-500/10' : 'bg-blue-500/10'}`}>
           <div className="flex items-center gap-3 min-w-0">
-            <div className={`w-11 h-11 rounded-full flex items-center justify-center shrink-0 ${isIn ? 'bg-emerald-500/20' : 'bg-blue-500/20'}`}>
-              {isIn ? <LogIn className="w-5.5 h-5.5 text-emerald-400" /> : <LogOut className="w-5.5 h-5.5 text-blue-400" />}
+            <div className={`w-10 h-10 sm:w-11 sm:h-11 rounded-full flex items-center justify-center shrink-0 ${isIn ? 'bg-emerald-500/20' : 'bg-blue-500/20'}`}>
+              {isIn ? <LogIn className="w-5 h-5 text-emerald-400" /> : <LogOut className="w-5 h-5 text-blue-400" />}
             </div>
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                 {isIn ? 'Checked In' : 'Checked Out'}
               </p>
-              <p className="text-xl font-bold text-foreground truncate">{current.fullName}</p>
+              <p className="text-lg sm:text-xl font-bold text-foreground truncate">{current.fullName}</p>
             </div>
           </div>
           <button onClick={() => setCurrent(null)} className="text-muted-foreground hover:text-foreground shrink-0 ml-3">
@@ -140,7 +143,7 @@ export default function PunchNotifier() {
           </button>
         </div>
 
-        <div className="px-6 py-5 grid grid-cols-2 gap-5">
+        <div className="px-4 sm:px-6 py-5 grid grid-cols-2 gap-4 sm:gap-5">
           <div className="flex items-center gap-2.5">
             <CreditCard className="w-4 h-4 text-muted-foreground/70 shrink-0" />
             <div>
