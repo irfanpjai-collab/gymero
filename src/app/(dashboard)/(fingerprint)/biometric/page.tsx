@@ -31,6 +31,7 @@ import {
   type AdmsCommand,
 } from '@/app/actions/adms'
 import { getMembers } from '@/app/actions/members'
+import { createClient } from '@/lib/supabase/client'
 import type { BiometricAttendance, Member } from '@/types'
 
 function formatDateTime(iso: string | null) {
@@ -67,8 +68,9 @@ export default function BiometricPage() {
   const [search, setSearch] = useState('')
   const [busyMemberId, setBusyMemberId] = useState<number | null>(null)
 
-  const loadAll = useCallback(async () => {
-    setLoading(true)
+  // Shared fetch, no loading-spinner side effect — used both for the initial
+  // load and for silent background refreshes triggered by Realtime events.
+  const fetchData = useCallback(async () => {
     const [d, att, m, cmds] = await Promise.all([
       getAdmsDevices(),
       getTodaysAttendanceLog(),
@@ -79,10 +81,30 @@ export default function BiometricPage() {
     setAttendance(att)
     setMembers(m)
     setCommands(cmds)
-    setLoading(false)
   }, [])
 
+  const loadAll = useCallback(async () => {
+    setLoading(true)
+    await fetchData()
+    setLoading(false)
+  }, [fetchData])
+
   useEffect(() => { loadAll() }, [loadAll])
+
+  // Live updates — without this, the page only ever showed what was loaded on
+  // mount; a new punch or a command flipping from "pending" to "done" needed a
+  // manual refresh to appear. Subscribes to every table this page displays.
+  useEffect(() => {
+    const supabase = createClient()
+    const channel = supabase
+      .channel('biometric_page_live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_logs' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'adms_commands' }, () => fetchData())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'adms_devices' }, () => fetchData())
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [fetchData])
 
   const deviceOnline = devices.some(d => {
     if (!d.last_seen) return false
