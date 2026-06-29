@@ -68,6 +68,7 @@ export default function NewMemberPage() {
   const [selectedPlanId, setSelectedPlanId] = useState('')
   const [startDate, setStartDate] = useState(today)
   const [amount, setAmount] = useState('')
+  const [amountNote, setAmountNote] = useState('')
 
   // Load next member ID + default settings
   useEffect(() => {
@@ -121,6 +122,7 @@ export default function NewMemberPage() {
           plan_id: selectedPlanId,
           start_date: startDate,
           amount: parseFloat(amount) || 0,
+          amount_note: amountNote.trim() || undefined,
           payment_method: paymentMethod,
         })
 
@@ -164,15 +166,12 @@ export default function NewMemberPage() {
 
           {/* Member ID + Full Name */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Member ID" required>
+            <Field label="Member ID">
               <input
-                type="number"
-                name="member_id"
-                value={memberId}
-                onChange={(e) => setMemberId(e.target.value)}
-                disabled={memberIdLoading}
-                className={inputCls}
-                placeholder={memberIdLoading ? 'Loading…' : ''}
+                type="text"
+                value={memberIdLoading ? 'Loading…' : `#${memberId} (auto-assigned)`}
+                disabled
+                className={`${inputCls} opacity-60 cursor-not-allowed`}
               />
             </Field>
             <Field label="Full Name" required>
@@ -374,6 +373,23 @@ export default function NewMemberPage() {
                       />
                     </Field>
                   </div>
+
+                  {(() => {
+                    const plan = plans.find((p) => p.id === selectedPlanId)
+                    if (!plan || parseFloat(amount) === plan.fee) return null
+                    return (
+                      <Field label={`Reason — amount differs from plan price (₹${plan.fee})`} required={addMembership}>
+                        <input
+                          type="text"
+                          value={amountNote}
+                          onChange={(e) => setAmountNote(e.target.value)}
+                          required={addMembership}
+                          placeholder="e.g. loyalty discount, partial payment"
+                          className={inputCls}
+                        />
+                      </Field>
+                    )
+                  })()}
 
                   {selectedPlanId && plans.length > 0 && (
                     <div className="text-xs text-muted-foreground bg-muted/30 rounded-xl px-3 py-2 border border-border">

@@ -54,6 +54,7 @@ export default function RenewDialog({
   const [selectedPlanId, setSelectedPlanId] = useState('')
   const [startDate, setStartDate] = useState(today)
   const [amount, setAmount] = useState('')
+  const [amountNote, setAmountNote] = useState('')
 
   const [admissionFee, setAdmissionFee] = useState('0')
   const [needsAdmissionFee, setNeedsAdmissionFee] = useState(false)
@@ -130,6 +131,7 @@ export default function RenewDialog({
       setSelectedPlanId('')
       setStartDate(today)
       setAmount('')
+      setAmountNote('')
       setAdmissionFee('0')
       setNeedsAdmissionFee(false)
       setLastExpiryDate(null)
@@ -147,6 +149,7 @@ export default function RenewDialog({
         plan_id: selectedPlanId,
         start_date: startDate,
         amount: parseFloat(amount) || 0,
+        amount_note: amountNote.trim() || undefined,
         admission_fee: parseFloat(admissionFee) || 0,
         payment_method: paymentMethod,
       })
@@ -269,6 +272,22 @@ export default function RenewDialog({
                     />
                   </Field>
                 </div>
+
+                {selectedPlan && parseFloat(amount) !== selectedPlan.fee && (
+                  <Field label={`Reason — amount differs from plan price (₹${selectedPlan.fee})`} required>
+                    <div className="relative">
+                      <AlertCircle className="absolute left-3 top-3 w-3.5 h-3.5 text-amber-400 pointer-events-none" />
+                      <input
+                        type="text"
+                        value={amountNote}
+                        onChange={(e) => setAmountNote(e.target.value)}
+                        required
+                        placeholder="e.g. loyalty discount, partial payment"
+                        className={`${inputCls} pl-9`}
+                      />
+                    </div>
+                  </Field>
+                )}
 
                 {/* Admission Fee field */}
                 <Field label={needsAdmissionFee ? "Admission Fee (₹) - Required" : "Admission Fee (₹) - Waived (within grace period)"}>

@@ -67,9 +67,10 @@ export async function getMembers(search?: string): Promise<Member[]> {
       .select(`
         *,
         active_membership:memberships!memberships_member_id_fkey(
-          id, expiry_date, status, plan_id, start_date, amount, created_at
+          id, expiry_date, status, plan_id, start_date, amount, amount_note, created_at
         )
       `)
+      .is('deleted_at', null)
       .order('expiry_date', { foreignTable: 'memberships', ascending: false })
       .order('member_id', { ascending: true })
 
@@ -108,7 +109,7 @@ export async function getMember(id: string): Promise<Member | null> {
       .select(`
         *,
         active_membership:memberships!memberships_member_id_fkey(
-          id, expiry_date, status, plan_id, start_date, amount, created_at
+          id, expiry_date, status, plan_id, start_date, amount, amount_note, created_at
         )
       `)
       .eq('id', id)
@@ -137,23 +138,11 @@ export async function createMember(
     const profile = await requireRole(['admin', 'receptionist'])
     const supabase = await createClient()
 
-    // Get next member_id
-    const { data: maxData, error: maxError } = await supabase
-      .from('members')
-      .select('member_id')
-      .order('member_id', { ascending: false })
-      .limit(1)
-      .single()
-
-    let nextMemberId: number
-    if (maxError || !maxData) {
-      nextMemberId = 100
-    } else {
-      nextMemberId = (maxData.member_id as number) + 1
-    }
-
+    // member_id is assigned by a DB sequence (member_id_seq, see
+    // accounts_integrity_fixes.sql) — reading MAX()+1 here and inserting
+    // separately let two simultaneous submissions compute the same "next" id;
+    // the same race that coach_id was already fixed for elsewhere.
     const payload: Record<string, unknown> = {
-      member_id: nextMemberId,
       full_name: data.get('full_name') as string,
       mobile: data.get('mobile') as string,
       gender: data.get('gender') as string,
@@ -241,15 +230,21 @@ export async function deleteMember(id: string): Promise<{ error?: string }> {
     const profile = await requireRole(['admin'])
     const supabase = await createClient()
 
-    // Fetch member_id before deleting — needed to find their device entry, and
-    // unavailable afterward.
     const { data: existing } = await supabase
       .from('members')
       .select('member_id')
       .eq('id', id)
       .single()
 
-    const { error } = await supabase.from('members').delete().eq('id', id)
+    // Soft delete — a hard delete here cascades to permanently erase the
+    // member's entire payment/membership history (both FKs are ON DELETE
+    // CASCADE), with no way to recover it. deleted_at is restricted to
+    // admin-only via a DB trigger (see accounts_integrity_fixes.sql), not
+    // just this requireRole check.
+    const { error } = await supabase
+      .from('members')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id)
 
     if (error) throw error
 

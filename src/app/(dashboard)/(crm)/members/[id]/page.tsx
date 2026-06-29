@@ -306,6 +306,11 @@ export default async function MemberDetailPage({
                   <p className="text-sm font-medium text-foreground">
                     {formatCurrency(membership.amount)}
                   </p>
+                  {membership.amount_note && (
+                    <p className="inline-flex items-center gap-1 text-xs text-amber-400 mt-1" title={membership.amount_note}>
+                      <AlertCircle className="w-3 h-3" /> Price adjusted
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-0.5">
                   <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">

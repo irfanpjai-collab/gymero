@@ -29,16 +29,21 @@ export async function createMembership(data: {
   plan_id: string
   start_date: string
   amount: number
-  payment_method?: string
+  amount_note?: string
+  payment_method: string
 }): Promise<{ error?: string; id?: string }> {
   try {
     const profile = await requireRole(['admin', 'receptionist'])
     const supabase = await createClient()
 
-    // Fetch plan to calculate expiry_date
+    if (!data.payment_method) {
+      throw new Error('Payment method is required — a membership cannot be activated without recording a payment')
+    }
+
+    // Fetch plan to calculate expiry_date and check the amount against its fee
     const { data: plan, error: planError } = await supabase
       .from('membership_plans')
-      .select('duration_months')
+      .select('duration_months, fee')
       .eq('id', data.plan_id)
       .single()
 
@@ -46,7 +51,16 @@ export async function createMembership(data: {
       throw new Error('Plan not found')
     }
 
-    const durationMonths = (plan as { duration_months: number }).duration_months
+    const { duration_months: durationMonths, fee } = plan as { duration_months: number; fee: number }
+
+    // Amount differing from the plan's listed fee isn't blocked — staff may
+    // have a legitimate reason (discount, partial payment) — but it must be
+    // explained, so it's flagged for review instead of indistinguishable from
+    // a full-price payment with no trace.
+    if (data.amount !== fee && !data.amount_note?.trim()) {
+      throw new Error(`Amount (₹${data.amount}) differs from the plan price (₹${fee}) — please add a note explaining why`)
+    }
+
     const startDate = new Date(data.start_date)
     const expiryDate = new Date(startDate)
     expiryDate.setMonth(expiryDate.getMonth() + durationMonths)
@@ -59,6 +73,7 @@ export async function createMembership(data: {
         start_date: data.start_date,
         expiry_date: expiryDate.toISOString().slice(0, 10),
         amount: data.amount,
+        amount_note: data.amount !== fee ? data.amount_note?.trim() : null,
         status: 'active',
         created_by: profile.user_id,
       })
@@ -67,20 +82,17 @@ export async function createMembership(data: {
 
     if (error) throw error
 
-    // Auto-record payment if payment_method is provided
-    if (data.payment_method) {
-      const { error: paymentError } = await supabase.from('payments').insert({
-        member_id: data.member_id,
-        membership_id: (inserted as { id: string }).id,
-        amount: data.amount,
-        payment_method: data.payment_method,
-        payment_type: 'membership',
-        payment_date: data.start_date,
-        notes: 'Auto-recorded on membership creation',
-        created_by: profile.user_id,
-      })
-      if (paymentError) throw new Error(`Membership created but payment failed to record: ${paymentError.message}`)
-    }
+    const { error: paymentError } = await supabase.from('payments').insert({
+      member_id: data.member_id,
+      membership_id: (inserted as { id: string }).id,
+      amount: data.amount,
+      payment_method: data.payment_method,
+      payment_type: 'membership',
+      payment_date: data.start_date,
+      notes: 'Auto-recorded on membership creation',
+      created_by: profile.user_id,
+    })
+    if (paymentError) throw new Error(`Membership created but payment failed to record: ${paymentError.message}`)
 
     revalidatePath('/members')
     revalidatePath('/payments')
@@ -93,17 +105,22 @@ export async function createMembership(data: {
 
 export async function renewMembership(
   memberId: string,
-  data: { 
-    plan_id: string; 
-    start_date: string; 
-    amount: number; 
+  data: {
+    plan_id: string;
+    start_date: string;
+    amount: number;
+    amount_note?: string;
     admission_fee?: number;
-    payment_method?: string;
+    payment_method: string;
   }
 ): Promise<{ error?: string }> {
   try {
     const profile = await requireRole(['admin', 'receptionist'])
     const supabase = await createClient()
+
+    if (!data.payment_method) {
+      throw new Error('Payment method is required — a membership cannot be activated without recording a payment')
+    }
 
     // Find the latest active membership so a renewal can't shrink remaining paid time.
     const { data: currentActive } = await supabase
@@ -136,10 +153,10 @@ export async function renewMembership(
 
     if (expireError) throw expireError
 
-    // Fetch plan to calculate expiry_date
+    // Fetch plan to calculate expiry_date and check the amount against its fee
     const { data: plan, error: planError } = await supabase
       .from('membership_plans')
-      .select('duration_months')
+      .select('duration_months, fee')
       .eq('id', data.plan_id)
       .single()
 
@@ -147,7 +164,13 @@ export async function renewMembership(
       throw new Error('Plan not found')
     }
 
-    const durationMonths = (plan as { duration_months: number }).duration_months
+    const { duration_months: durationMonths, fee } = plan as { duration_months: number; fee: number }
+
+    // See createMembership for why this is flagged, not blocked.
+    if (data.amount !== fee && !data.amount_note?.trim()) {
+      throw new Error(`Amount (₹${data.amount}) differs from the plan price (₹${fee}) — please add a note explaining why`)
+    }
+
     const expiryDate = new Date(effectiveStart)
     expiryDate.setMonth(expiryDate.getMonth() + durationMonths)
 
@@ -159,6 +182,7 @@ export async function renewMembership(
         start_date: effectiveStartStr,
         expiry_date: expiryDate.toISOString().slice(0, 10),
         amount: data.amount,
+        amount_note: data.amount !== fee ? data.amount_note?.trim() : null,
         status: 'active',
         created_by: profile.user_id,
       })
@@ -176,35 +200,32 @@ export async function renewMembership(
       if (feeError) throw feeError
     }
 
-    // Auto-record payments if payment_method is provided
-    if (data.payment_method) {
-      // 1. Membership payment
-      const { error: paymentError } = await supabase.from('payments').insert({
+    // 1. Membership payment
+    const { error: paymentError } = await supabase.from('payments').insert({
+      member_id: memberId,
+      membership_id: (insertedMembership as { id: string }).id,
+      amount: data.amount,
+      payment_method: data.payment_method,
+      payment_type: 'membership',
+      payment_date: effectiveStartStr,
+      notes: 'Auto-recorded on membership renewal',
+      created_by: profile.user_id,
+    })
+    if (paymentError) throw new Error(`Membership renewed but payment failed to record: ${paymentError.message}`)
+
+    // 2. Admission fee payment (if applicable)
+    if (data.admission_fee && data.admission_fee > 0) {
+      const { error: admissionPaymentError } = await supabase.from('payments').insert({
         member_id: memberId,
-        membership_id: (insertedMembership as { id: string }).id,
-        amount: data.amount,
+        amount: data.admission_fee,
         payment_method: data.payment_method,
-        payment_type: 'membership',
+        payment_type: 'admission',
         payment_date: effectiveStartStr,
-        notes: 'Auto-recorded on membership renewal',
+        notes: 'Auto-recorded admission fee on membership renewal',
         created_by: profile.user_id,
       })
-      if (paymentError) throw new Error(`Membership renewed but payment failed to record: ${paymentError.message}`)
-
-      // 2. Admission fee payment (if applicable)
-      if (data.admission_fee && data.admission_fee > 0) {
-        const { error: admissionPaymentError } = await supabase.from('payments').insert({
-          member_id: memberId,
-          amount: data.admission_fee,
-          payment_method: data.payment_method,
-          payment_type: 'admission',
-          payment_date: effectiveStartStr,
-          notes: 'Auto-recorded admission fee on membership renewal',
-          created_by: profile.user_id,
-        })
-        if (admissionPaymentError) {
-          throw new Error(`Membership renewed but admission fee payment failed to record: ${admissionPaymentError.message}`)
-        }
+      if (admissionPaymentError) {
+        throw new Error(`Membership renewed but admission fee payment failed to record: ${admissionPaymentError.message}`)
       }
     }
 
