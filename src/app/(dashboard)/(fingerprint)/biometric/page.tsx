@@ -32,6 +32,7 @@ import {
   type MemberLite,
 } from '@/app/actions/adms'
 import { createClient } from '@/lib/supabase/client'
+import { subscribeToAttendanceInserts } from '@/lib/realtime/attendance-bus'
 import type { BiometricAttendance } from '@/types'
 
 function formatDateTime(iso: string | null) {
@@ -123,17 +124,23 @@ export default function BiometricPage() {
 
   // Live updates — without this, the page only ever showed what was loaded on
   // mount; a new punch or a command flipping from "pending" to "done" needed a
-  // manual refresh to appear. Subscribes to every table this page displays.
+  // manual refresh to appear. attendance_logs goes through the shared bus
+  // (see src/lib/realtime/attendance-bus.ts) rather than its own binding here
+  // — two separate channels both bound to attendance_logs in the same
+  // session meant only one of them ever actually received the broadcast.
   useEffect(() => {
     const supabase = createClient()
     const channel = supabase
       .channel('biometric_page_live')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance_logs' }, () => fetchData())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'adms_commands' }, () => fetchData())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'adms_devices' }, () => fetchData())
       .subscribe()
+    const unsubscribeAttendance = subscribeToAttendanceInserts(() => fetchData())
 
-    return () => { supabase.removeChannel(channel) }
+    return () => {
+      supabase.removeChannel(channel)
+      unsubscribeAttendance()
+    }
   }, [fetchData])
 
   const deviceOnline = devices.some(d => {

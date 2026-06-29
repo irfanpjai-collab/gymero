@@ -2,14 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { subscribeToAttendanceInserts } from '@/lib/realtime/attendance-bus'
 import { LogIn, LogOut, X, CircleCheck, CircleX, Phone, CreditCard, CalendarClock } from 'lucide-react'
-
-interface AttendanceLogRow {
-  member_id: string | null
-  device_user_id: string
-  punched_at: string
-  punch_type: number
-}
 
 interface PunchDetails {
   fullName: string
@@ -36,77 +30,65 @@ export default function PunchNotifier() {
   useEffect(() => {
     const supabase = createClient()
 
-    const channel = supabase
-      .channel('attendance_logs_notifier')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'attendance_logs' },
-        async (payload) => {
-          console.log('[PunchNotifier] postgres_changes fired, eventType:', payload.eventType, payload)
-          if (payload.eventType !== 'INSERT') return
-          const row = payload.new as AttendanceLogRow
-          let details: PunchDetails
+    const unsubscribe = subscribeToAttendanceInserts(async (row) => {
+      let details: PunchDetails
 
-          try {
-            if (row.member_id) {
-              const [{ data: member }, { data: memberships }] = await Promise.all([
-                supabase.from('members').select('full_name, member_id, mobile').eq('id', row.member_id).maybeSingle(),
-                supabase
-                  .from('memberships')
-                  .select('status, expiry_date')
-                  .eq('member_id', row.member_id)
-                  .order('expiry_date', { ascending: false })
-                  .limit(1),
-              ])
+      try {
+        if (row.member_id) {
+          const [{ data: member }, { data: memberships }] = await Promise.all([
+            supabase.from('members').select('full_name, member_id, mobile').eq('id', row.member_id).maybeSingle(),
+            supabase
+              .from('memberships')
+              .select('status, expiry_date')
+              .eq('member_id', row.member_id)
+              .order('expiry_date', { ascending: false })
+              .limit(1),
+          ])
 
-              const latest = memberships?.[0]
-              const today = new Date().toISOString().split('T')[0]
-              const active = !!latest && latest.status === 'active' && latest.expiry_date >= today
+          const latest = memberships?.[0]
+          const today = new Date().toISOString().split('T')[0]
+          const active = !!latest && latest.status === 'active' && latest.expiry_date >= today
 
-              details = {
-                fullName: member?.full_name ?? `Member #${row.device_user_id}`,
-                memberNumber: member?.member_id ?? Number(row.device_user_id),
-                mobile: member?.mobile ?? '',
-                punchType: row.punch_type,
-                timestamp: row.punched_at,
-                membershipStatus: latest ? (active ? 'active' : 'expired') : 'none',
-                expiryDate: latest?.expiry_date ?? null,
-              }
-            } else {
-              details = {
-                fullName: `Unknown member (#${row.device_user_id})`,
-                memberNumber: Number(row.device_user_id) || 0,
-                mobile: '',
-                punchType: row.punch_type,
-                timestamp: row.punched_at,
-                membershipStatus: 'none',
-                expiryDate: null,
-              }
-            }
-          } catch {
-            details = {
-              fullName: `Member #${row.device_user_id}`,
-              memberNumber: Number(row.device_user_id) || 0,
-              mobile: '',
-              punchType: row.punch_type,
-              timestamp: row.punched_at,
-              membershipStatus: 'none',
-              expiryDate: null,
-            }
+          details = {
+            fullName: member?.full_name ?? `Member #${row.device_user_id}`,
+            memberNumber: member?.member_id ?? Number(row.device_user_id),
+            mobile: member?.mobile ?? '',
+            punchType: row.punch_type,
+            timestamp: row.punched_at,
+            membershipStatus: latest ? (active ? 'active' : 'expired') : 'none',
+            expiryDate: latest?.expiry_date ?? null,
           }
-
-          console.log('[PunchNotifier] new attendance row, showing popup for', details.fullName)
-          setCurrent(details)
-          if (timerRef.current) clearTimeout(timerRef.current)
-          timerRef.current = setTimeout(() => setCurrent(null), AUTO_DISMISS_MS)
+        } else {
+          details = {
+            fullName: `Unknown member (#${row.device_user_id})`,
+            memberNumber: Number(row.device_user_id) || 0,
+            mobile: '',
+            punchType: row.punch_type,
+            timestamp: row.punched_at,
+            membershipStatus: 'none',
+            expiryDate: null,
+          }
         }
-      )
-      .subscribe((status) => {
-        console.log('[PunchNotifier] realtime channel status:', status)
-      })
+      } catch {
+        details = {
+          fullName: `Member #${row.device_user_id}`,
+          memberNumber: Number(row.device_user_id) || 0,
+          mobile: '',
+          punchType: row.punch_type,
+          timestamp: row.punched_at,
+          membershipStatus: 'none',
+          expiryDate: null,
+        }
+      }
+
+      console.log('[PunchNotifier] new attendance row, showing popup for', details.fullName)
+      setCurrent(details)
+      if (timerRef.current) clearTimeout(timerRef.current)
+      timerRef.current = setTimeout(() => setCurrent(null), AUTO_DISMISS_MS)
+    })
 
     return () => {
-      supabase.removeChannel(channel)
+      unsubscribe()
       if (timerRef.current) clearTimeout(timerRef.current)
     }
   }, [])
