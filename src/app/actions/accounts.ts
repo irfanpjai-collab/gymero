@@ -26,10 +26,10 @@ export interface LedgerEntry {
 }
 
 export interface AccountsOverview {
-  thisMonthRevenue: number
-  thisMonthExpenses: number
-  thisMonthSalary: number
-  thisMonthNet: number
+  selectedMonthRevenue: number
+  selectedMonthExpenses: number
+  selectedMonthSalary: number
+  selectedMonthNet: number
   allTimeNet: number
   pendingSalaryTotal: number
   pendingSalaryCount: number
@@ -42,7 +42,7 @@ export interface AccountsOverview {
 }
 
 const EMPTY: AccountsOverview = {
-  thisMonthRevenue: 0, thisMonthExpenses: 0, thisMonthSalary: 0, thisMonthNet: 0, allTimeNet: 0,
+  selectedMonthRevenue: 0, selectedMonthExpenses: 0, selectedMonthSalary: 0, selectedMonthNet: 0, allTimeNet: 0,
   pendingSalaryTotal: 0, pendingSalaryCount: 0, pendingExpensesTotal: 0, pendingExpensesCount: 0,
   monthlyTrend: [], expensesByCategory: [], paymentsByMethod: [], ledger: [],
 }
@@ -65,9 +65,20 @@ function monthLabel(key: string): string {
 // Admin-only is enforced by the page itself (a server component checking the
 // caller's role before rendering this), same as how RLS already makes
 // staff_salaries/expenses invisible to non-admins regardless.
-export async function getAccountsOverview(): Promise<AccountsOverview> {
+//
+// month is a plain "YYYY-MM"; defaults to the current month. Scopes the stat
+// cards, breakdowns, and ledger to that month — the 6-month trend chart and
+// the all-time net figure stay as-is regardless, since a month filter on
+// those would defeat their purpose.
+export async function getAccountsOverview(month?: string): Promise<AccountsOverview> {
   try {
     const supabase = await createClient()
+
+    const today = new Date()
+    const selectedMonthKey = month ?? `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
+    const [selY, selM] = selectedMonthKey.split('-').map(Number)
+    const monthStart = `${selectedMonthKey}-01`
+    const monthEnd = selM === 12 ? `${selY + 1}-01-01` : `${selY}-${String(selM + 1).padStart(2, '0')}-01`
 
     const [
       { data: paymentsLite },
@@ -76,17 +87,19 @@ export async function getAccountsOverview(): Promise<AccountsOverview> {
       { data: salaries },
     ] = await Promise.all([
       supabase.from('payments').select('amount, payment_method, payment_date'),
+      // Scoped directly to the selected month's date range — pulling from the
+      // capped/all-time set here would silently miss older months once total
+      // payment volume passes the cap.
       supabase
         .from('payments')
         .select('id, amount, payment_method, payment_type, payment_date, member:members!payments_member_id_fkey(full_name)')
+        .gte('payment_date', monthStart)
+        .lt('payment_date', monthEnd)
         .order('payment_date', { ascending: false })
-        .limit(300),
+        .limit(500),
       supabase.from('expenses').select('*'),
       supabase.from('staff_salaries').select('*'),
     ])
-
-    const today = new Date()
-    const thisMonthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`
 
     type PaymentLite = { amount: number; payment_method: string; payment_date: string }
     const payments = (paymentsLite ?? []) as PaymentLite[]
@@ -97,10 +110,14 @@ export async function getAccountsOverview(): Promise<AccountsOverview> {
     type SalaryRow = { id: string; staff_name: string; net_salary: number; month: string; status: 'pending' | 'paid' }
     const salaryRows = (salaries ?? []) as SalaryRow[]
 
-    // ── This month / all time ──
-    const thisMonthRevenue = payments.filter(p => monthKey(p.payment_date) === thisMonthKey).reduce((s, p) => s + p.amount, 0)
-    const thisMonthExpenses = expenseRows.filter(e => e.status === 'paid' && monthKey(e.expense_date) === thisMonthKey).reduce((s, e) => s + e.amount, 0)
-    const thisMonthSalary = salaryRows.filter(s => s.status === 'paid' && s.month.slice(0, 7) === thisMonthKey).reduce((s, sal) => s + sal.net_salary, 0)
+    // ── Selected month / all time ──
+    const monthPayments = payments.filter(p => monthKey(p.payment_date) === selectedMonthKey)
+    const monthExpenses = expenseRows.filter(e => e.status === 'paid' && monthKey(e.expense_date) === selectedMonthKey)
+    const monthSalaries = salaryRows.filter(s => s.status === 'paid' && s.month.slice(0, 7) === selectedMonthKey)
+
+    const selectedMonthRevenue = monthPayments.reduce((s, p) => s + p.amount, 0)
+    const selectedMonthExpenses = monthExpenses.reduce((s, e) => s + e.amount, 0)
+    const selectedMonthSalary = monthSalaries.reduce((s, sal) => s + sal.net_salary, 0)
 
     const allTimeRevenue = payments.reduce((s, p) => s + p.amount, 0)
     const allTimeExpenses = expenseRows.filter(e => e.status === 'paid').reduce((s, e) => s + e.amount, 0)
@@ -123,9 +140,10 @@ export async function getAccountsOverview(): Promise<AccountsOverview> {
       return { month: monthLabel(key), revenue, expenses: exp, salary: sal, net: revenue - exp - sal }
     })
 
-    // ── Breakdowns ──
+    // ── Breakdowns, scoped to the selected month ──
+    const monthExpensesAll = expenseRows.filter(e => monthKey(e.expense_date) === selectedMonthKey)
     const expenseCategoryMap: Record<string, number> = {}
-    for (const e of expenseRows) {
+    for (const e of monthExpensesAll) {
       expenseCategoryMap[e.category] = (expenseCategoryMap[e.category] ?? 0) + e.amount
     }
     const expensesByCategory = Object.entries(expenseCategoryMap)
@@ -133,14 +151,14 @@ export async function getAccountsOverview(): Promise<AccountsOverview> {
       .sort((a, b) => b.amount - a.amount)
 
     const methodMap: Record<string, number> = {}
-    for (const p of payments) {
+    for (const p of monthPayments) {
       methodMap[p.payment_method] = (methodMap[p.payment_method] ?? 0) + p.amount
     }
     const paymentsByMethod = Object.entries(methodMap)
       .map(([label, amount]) => ({ label: label.replace('_', ' '), amount }))
       .sort((a, b) => b.amount - a.amount)
 
-    // ── Combined ledger ──
+    // ── Combined ledger — payments are already month-scoped by the query above ──
     type PaymentLedgerRow = { id: string; amount: number; payment_method: string; payment_type: string; payment_date: string; member: { full_name: string } | { full_name: string }[] | null }
     const ledgerPayments: LedgerEntry[] = ((paymentsLedger ?? []) as unknown as PaymentLedgerRow[]).map(p => {
       const member = Array.isArray(p.member) ? p.member[0] : p.member
@@ -154,7 +172,7 @@ export async function getAccountsOverview(): Promise<AccountsOverview> {
         status: 'paid' as const,
       }
     })
-    const ledgerExpenses: LedgerEntry[] = expenseRows.map(e => ({
+    const ledgerExpenses: LedgerEntry[] = monthExpensesAll.map(e => ({
       id: `expense-${e.id}`,
       date: e.expense_date,
       type: 'expense' as const,
@@ -163,7 +181,8 @@ export async function getAccountsOverview(): Promise<AccountsOverview> {
       method: e.payment_method,
       status: e.status,
     }))
-    const ledgerSalaries: LedgerEntry[] = salaryRows.map(s => ({
+    const monthLedgerSalaries = salaryRows.filter(s => s.month.slice(0, 7) === selectedMonthKey)
+    const ledgerSalaries: LedgerEntry[] = monthLedgerSalaries.map(s => ({
       id: `salary-${s.id}`,
       date: s.month,
       type: 'salary' as const,
@@ -178,10 +197,10 @@ export async function getAccountsOverview(): Promise<AccountsOverview> {
       .slice(0, 200)
 
     return {
-      thisMonthRevenue,
-      thisMonthExpenses,
-      thisMonthSalary,
-      thisMonthNet: thisMonthRevenue - thisMonthExpenses - thisMonthSalary,
+      selectedMonthRevenue,
+      selectedMonthExpenses,
+      selectedMonthSalary,
+      selectedMonthNet: selectedMonthRevenue - selectedMonthExpenses - selectedMonthSalary,
       allTimeNet: allTimeRevenue - allTimeExpenses - allTimeSalary,
       pendingSalaryTotal: pendingSalaries.reduce((s, sal) => s + sal.net_salary, 0),
       pendingSalaryCount: pendingSalaries.length,

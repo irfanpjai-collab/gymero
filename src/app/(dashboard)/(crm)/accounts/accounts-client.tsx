@@ -14,6 +14,8 @@ import {
   CreditCard,
   Wallet,
   CheckCircle,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react'
 import {
   ComposedChart,
@@ -31,6 +33,16 @@ import { formatCurrency } from '@/lib/utils'
 
 const LEDGER_TYPES = ['all', 'revenue', 'expense', 'salary'] as const
 type LedgerFilter = typeof LEDGER_TYPES[number]
+
+function getCurrentMonth() {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+}
+
+function getMonthLabel(monthStr: string) {
+  const [y, m] = monthStr.split('-')
+  return new Date(Number(y), Number(m) - 1, 1).toLocaleString('en-IN', { month: 'long', year: 'numeric' })
+}
 
 function StatCard({ label, value, icon: Icon, color, bg }: { label: string; value: string; icon: React.ElementType; color: string; bg: string }) {
   return (
@@ -87,13 +99,29 @@ export default function AccountsClient() {
   const [data, setData] = useState<AccountsOverview | null>(null)
   const [loading, setLoading] = useState(true)
   const [ledgerFilter, setLedgerFilter] = useState<LedgerFilter>('all')
+  const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth())
 
   useEffect(() => {
-    getAccountsOverview().then(d => {
+    setLoading(true)
+    getAccountsOverview(selectedMonth).then(d => {
       setData(d)
       setLoading(false)
     })
-  }, [])
+  }, [selectedMonth])
+
+  function prevMonth() {
+    const [y, m] = selectedMonth.split('-').map(Number)
+    setSelectedMonth(m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`)
+  }
+
+  function nextMonth() {
+    const [y, m] = selectedMonth.split('-').map(Number)
+    const now = getCurrentMonth()
+    const next = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`
+    if (next <= now) setSelectedMonth(next)
+  }
+
+  const isCurrentMonth = selectedMonth === getCurrentMonth()
 
   if (loading || !data) {
     return (
@@ -109,26 +137,41 @@ export default function AccountsClient() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
-          <Landmark className="w-5 h-5 text-primary" />
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
+            <Landmark className="w-5 h-5 text-primary" />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-foreground">Accounts</h1>
+            <p className="text-muted-foreground text-xs">Revenue, expenses, and salary — all linked in one place</p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-xl font-bold text-foreground">Accounts</h1>
-          <p className="text-muted-foreground text-xs">Revenue, expenses, and salary — all linked in one place</p>
+
+        {/* Month navigator — scopes the stat cards, breakdowns, and ledger below */}
+        <div className="flex items-center gap-3">
+          <button onClick={prevMonth} className="p-2 rounded-xl border border-border hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
+            <ChevronLeft className="w-4 h-4" />
+          </button>
+          <div className="px-5 py-2 bg-card border border-border rounded-xl min-w-[160px] text-center">
+            <span className="text-foreground font-semibold text-sm">{getMonthLabel(selectedMonth)}</span>
+          </div>
+          <button onClick={nextMonth} disabled={isCurrentMonth} className="p-2 rounded-xl border border-border hover:bg-muted text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+            <ChevronRight className="w-4 h-4" />
+          </button>
         </div>
       </div>
 
       {/* Top stat cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="This Month Revenue" value={formatCurrency(data.thisMonthRevenue)} icon={DollarSign} color="text-emerald-400" bg="bg-emerald-500/10" />
-        <StatCard label="This Month Outflow" value={formatCurrency(data.thisMonthExpenses + data.thisMonthSalary)} icon={TrendingDown} color="text-red-400" bg="bg-red-500/10" />
+        <StatCard label={`Revenue — ${getMonthLabel(selectedMonth)}`} value={formatCurrency(data.selectedMonthRevenue)} icon={DollarSign} color="text-emerald-400" bg="bg-emerald-500/10" />
+        <StatCard label={`Outflow — ${getMonthLabel(selectedMonth)}`} value={formatCurrency(data.selectedMonthExpenses + data.selectedMonthSalary)} icon={TrendingDown} color="text-red-400" bg="bg-red-500/10" />
         <StatCard
-          label="This Month Net"
-          value={formatCurrency(data.thisMonthNet)}
+          label={`Net — ${getMonthLabel(selectedMonth)}`}
+          value={formatCurrency(data.selectedMonthNet)}
           icon={Scale}
-          color={data.thisMonthNet >= 0 ? 'text-emerald-400' : 'text-red-400'}
-          bg={data.thisMonthNet >= 0 ? 'bg-emerald-500/10' : 'bg-red-500/10'}
+          color={data.selectedMonthNet >= 0 ? 'text-emerald-400' : 'text-red-400'}
+          bg={data.selectedMonthNet >= 0 ? 'bg-emerald-500/10' : 'bg-red-500/10'}
         />
         <StatCard
           label="All-Time Net"
@@ -198,13 +241,13 @@ export default function AccountsClient() {
       {/* Breakdowns */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <BreakdownPanel
-          title="Expenses by Category"
+          title={`Expenses by Category — ${getMonthLabel(selectedMonth)}`}
           icon={Receipt}
           items={data.expensesByCategory}
           total={data.expensesByCategory.reduce((s, c) => s + c.amount, 0)}
         />
         <BreakdownPanel
-          title="Payments by Method"
+          title={`Payments by Method — ${getMonthLabel(selectedMonth)}`}
           icon={CreditCard}
           items={data.paymentsByMethod}
           total={data.paymentsByMethod.reduce((s, c) => s + c.amount, 0)}
@@ -216,7 +259,7 @@ export default function AccountsClient() {
         <div className="px-5 py-4 border-b border-border flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <Wallet className="w-4 h-4 text-muted-foreground" />
-            <span className="text-foreground font-semibold text-sm">Transaction Ledger</span>
+            <span className="text-foreground font-semibold text-sm">Transaction Ledger — {getMonthLabel(selectedMonth)}</span>
           </div>
           <div className="flex gap-1 bg-muted/30 border border-border rounded-xl p-1">
             {LEDGER_TYPES.map(t => (
