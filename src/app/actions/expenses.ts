@@ -4,11 +4,13 @@ import { createClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth'
 import { revalidatePath } from 'next/cache'
 
-export const EXPENSE_CATEGORIES = [
-  'rent', 'electricity', 'water', 'maintenance',
-  'equipment', 'supplies', 'marketing', 'staff_welfare', 'other',
-] as const
-export type ExpenseCategory = typeof EXPENSE_CATEGORIES[number]
+// Plain runtime exports (consts/arrays) don't survive the 'use server'
+// client/server boundary — only async functions do. The category list itself
+// lives client-side in the page, mirroring how STAFF_TYPES lives in
+// salary/page.tsx rather than salary.ts. This stays a type-only export.
+export type ExpenseCategory =
+  | 'rent' | 'electricity' | 'water' | 'maintenance'
+  | 'equipment' | 'supplies' | 'marketing' | 'staff_welfare' | 'other'
 
 export interface Expense {
   id: string

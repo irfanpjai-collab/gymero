@@ -19,11 +19,15 @@ import {
   createExpense,
   markExpensePaid,
   deleteExpense,
-  EXPENSE_CATEGORIES,
   type Expense,
   type ExpenseCategory,
 } from '@/app/actions/expenses'
 import { formatCurrency } from '@/lib/utils'
+
+const EXPENSE_CATEGORIES = [
+  'rent', 'electricity', 'water', 'maintenance',
+  'equipment', 'supplies', 'marketing', 'staff_welfare', 'other',
+] as const satisfies readonly ExpenseCategory[]
 
 const PAYMENT_METHODS = ['cash', 'upi', 'bank_transfer'] as const
 type PaymentMethod = typeof PAYMENT_METHODS[number]
