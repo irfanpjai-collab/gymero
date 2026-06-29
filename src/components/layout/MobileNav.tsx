@@ -6,17 +6,17 @@ import { cn } from '@/lib/utils'
 import {
   LayoutDashboard,
   Users,
-  DollarSign,
+  Landmark,
   Fingerprint,
-  MoreHorizontal,
+  Settings,
 } from 'lucide-react'
 
 const navItems = [
-  { href: '/dashboard', icon: LayoutDashboard, label: 'Home'    },
-  { href: '/members',   icon: Users,           label: 'Members' },
-  { href: '/payments',  icon: DollarSign,      label: 'Payments'},
-  { href: '/biometric', icon: Fingerprint,     label: 'Finger'  },
-  { href: '/settings',  icon: MoreHorizontal,  label: 'More'    },
+  { href: '/dashboard', icon: LayoutDashboard, label: 'Home'     },
+  { href: '/members',   icon: Users,           label: 'Members'  },
+  { href: '/accounts',  icon: Landmark,        label: 'Accounts' },
+  { href: '/biometric', icon: Fingerprint,     label: 'Finger'   },
+  { href: '/settings',  icon: Settings,        label: 'Settings' },
 ]
 
 export default function MobileNav() {
