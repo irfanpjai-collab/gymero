@@ -9,7 +9,7 @@ const inter = Inter({ subsets: ['latin'], variable: '--font-sans' })
 export const metadata: Metadata = {
   title: 'Fitness – Gym Management',
   description: 'Professional Gym ERP & CRM for managing members, memberships, payments, and more.',
-  icons: { icon: '/favicon.ico' },
+  icons: { icon: '/icon.svg' },
 }
 
 export const viewport: Viewport = {
