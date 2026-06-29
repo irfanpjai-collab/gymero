@@ -2,11 +2,13 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { BarChart3, Download, Users, DollarSign, TrendingUp } from 'lucide-react'
+import { BarChart3, Download, Users, DollarSign, TrendingUp, TrendingDown, Scale } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { getMembers } from '@/app/actions/members'
 import { getPayments, getMonthlyRevenue } from '@/app/actions/payments'
+import { getSalaries } from '@/app/actions/salary'
+import { getExpenses } from '@/app/actions/expenses'
 import { formatDate, formatCurrency, getMembershipStatus } from '@/lib/utils'
 import type { Member, Payment } from '@/types'
 
@@ -24,16 +26,25 @@ export default function ReportsPage() {
   const [tab, setTab] = useState<TabType>('Members')
   const [members, setMembers] = useState<Member[]>([])
   const [payments, setPayments] = useState<Payment[]>([])
+  const [totalSalaryPaid, setTotalSalaryPaid] = useState(0)
+  const [totalExpensesPaid, setTotalExpensesPaid] = useState(0)
   const [monthlyRevenue, setMonthlyRevenue] = useState<{ month: string; revenue: number }[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function load() {
       setLoading(true)
-      const [m, p, mr] = await Promise.all([getMembers(), getPayments(), getMonthlyRevenue()])
+      // Salary and expense reads are admin-only at the RLS layer (see
+      // security_hardening.sql / expenses.sql) — a non-admin viewing this
+      // page simply gets an empty array back here, not an error.
+      const [m, p, mr, salaries, expenses] = await Promise.all([
+        getMembers(), getPayments(), getMonthlyRevenue(), getSalaries(), getExpenses(),
+      ])
       setMembers(m)
       setPayments(p)
       setMonthlyRevenue(mr.reverse())
+      setTotalSalaryPaid(salaries.filter(s => s.status === 'paid').reduce((a, s) => a + s.net_salary, 0))
+      setTotalExpensesPaid(expenses.filter(e => e.status === 'paid').reduce((a, e) => a + e.amount, 0))
       setLoading(false)
     }
     load()
@@ -43,6 +54,7 @@ export default function ReportsPage() {
   const expired = members.filter(m => !m.active_membership || getMembershipStatus(m.active_membership.expiry_date) === 'expired')
   const expiringSoon = members.filter(m => m.active_membership && getMembershipStatus(m.active_membership.expiry_date) === 'expiring_soon')
   const totalRevenue = payments.reduce((s, p) => s + p.amount, 0)
+  const netProfit = totalRevenue - totalSalaryPaid - totalExpensesPaid
 
   function exportMembers() {
     exportToExcel(members.map(m => ({
@@ -181,6 +193,25 @@ export default function ReportsPage() {
                 </div>
                 <div>
                   <p className="text-2xl font-extrabold text-foreground">{s.value}</p>
+                  <p className="text-muted-foreground text-sm">{s.label}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Net position — links revenue against salary + expenses, all paid-to-date */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {[
+              { label: 'Salary Paid (All Time)', value: formatCurrency(totalSalaryPaid), icon: TrendingDown, color: 'text-amber-400', bg: 'bg-amber-500/10' },
+              { label: 'Expenses Paid (All Time)', value: formatCurrency(totalExpensesPaid), icon: TrendingDown, color: 'text-red-400', bg: 'bg-red-500/10' },
+              { label: 'Net (Revenue − Salary − Expenses)', value: formatCurrency(netProfit), icon: Scale, color: netProfit >= 0 ? 'text-emerald-400' : 'text-red-400', bg: netProfit >= 0 ? 'bg-emerald-500/10' : 'bg-red-500/10' },
+            ].map(s => (
+              <div key={s.label} className="bg-card rounded-2xl border border-border p-5 flex items-center gap-4 stat-card">
+                <div className={`w-11 h-11 rounded-xl ${s.bg} flex items-center justify-center flex-shrink-0`}>
+                  <s.icon className={`w-5 h-5 ${s.color}`} />
+                </div>
+                <div>
+                  <p className={`text-2xl font-extrabold ${s.color}`}>{s.value}</p>
                   <p className="text-muted-foreground text-sm">{s.label}</p>
                 </div>
               </div>

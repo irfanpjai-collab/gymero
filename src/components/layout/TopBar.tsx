@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils'
 import {
   Sun, Moon, LogOut, Menu, X,
   LayoutDashboard, Users, CreditCard, DollarSign,
-  UserCheck, Wallet, MessageCircle, BarChart3,
+  UserCheck, Wallet, Receipt, MessageCircle, BarChart3,
   Settings, Fingerprint,
 } from 'lucide-react'
 
@@ -21,6 +21,8 @@ const pageTitles: Record<string, string> = {
   '/payments':    'Payments',
   '/coaches':     'Coaches',
   '/leads':       'Leads',
+  '/salary':      'Salary',
+  '/expenses':    'Expenses',
   '/whatsapp':    'WhatsApp',
   '/reports':     'Reports',
   '/settings':    'Settings',
@@ -37,6 +39,7 @@ const navGroups = [
       { href: '/payments',    icon: DollarSign,      label: 'Payments'    },
       { href: '/coaches',     icon: UserCheck,       label: 'Coaches'     },
       { href: '/salary',      icon: Wallet,          label: 'Salary'      },
+      { href: '/expenses',    icon: Receipt,         label: 'Expenses'    },
       { href: '/whatsapp',    icon: MessageCircle,   label: 'WhatsApp'    },
       { href: '/reports',     icon: BarChart3,       label: 'Reports'     },
     ],
