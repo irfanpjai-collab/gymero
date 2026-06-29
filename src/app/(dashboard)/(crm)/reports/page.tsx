@@ -5,10 +5,7 @@ import Link from 'next/link'
 import { BarChart3, Download, Users, DollarSign, TrendingUp, TrendingDown, Scale } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { getMembers } from '@/app/actions/members'
-import { getPayments, getMonthlyRevenue } from '@/app/actions/payments'
-import { getSalaries } from '@/app/actions/salary'
-import { getExpenses } from '@/app/actions/expenses'
+import { getReportsOverview } from '@/app/actions/reports'
 import { formatDate, formatCurrency, getMembershipStatus } from '@/lib/utils'
 import type { Member, Payment } from '@/types'
 
@@ -34,17 +31,12 @@ export default function ReportsPage() {
   useEffect(() => {
     async function load() {
       setLoading(true)
-      // Salary and expense reads are admin-only at the RLS layer (see
-      // security_hardening.sql / expenses.sql) — a non-admin viewing this
-      // page simply gets an empty array back here, not an error.
-      const [m, p, mr, salaries, expenses] = await Promise.all([
-        getMembers(), getPayments(), getMonthlyRevenue(), getSalaries(), getExpenses(),
-      ])
-      setMembers(m)
-      setPayments(p)
-      setMonthlyRevenue(mr.reverse())
-      setTotalSalaryPaid(salaries.filter(s => s.status === 'paid').reduce((a, s) => a + s.net_salary, 0))
-      setTotalExpensesPaid(expenses.filter(e => e.status === 'paid').reduce((a, e) => a + e.amount, 0))
+      const data = await getReportsOverview()
+      setMembers(data.members)
+      setPayments(data.payments)
+      setMonthlyRevenue(data.monthlyRevenue)
+      setTotalSalaryPaid(data.totalSalaryPaid)
+      setTotalExpensesPaid(data.totalExpensesPaid)
       setLoading(false)
     }
     load()
