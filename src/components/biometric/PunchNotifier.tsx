@@ -42,6 +42,7 @@ export default function PunchNotifier() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'attendance_logs' },
         async (payload) => {
+          console.log('[PunchNotifier] postgres_changes fired, eventType:', payload.eventType, payload)
           if (payload.eventType !== 'INSERT') return
           const row = payload.new as AttendanceLogRow
           let details: PunchDetails
