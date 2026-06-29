@@ -11,7 +11,7 @@ import {
   Sun, Moon, LogOut, Menu, X,
   LayoutDashboard, Users, CreditCard, DollarSign,
   UserCheck, Wallet, Receipt, Landmark, MessageCircle, BarChart3,
-  Settings, Fingerprint,
+  FileSpreadsheet, Settings, Fingerprint,
 } from 'lucide-react'
 
 const pageTitles: Record<string, string> = {
@@ -26,6 +26,7 @@ const pageTitles: Record<string, string> = {
   '/accounts':    'Accounts',
   '/whatsapp':    'WhatsApp',
   '/reports':     'Reports',
+  '/documents':   'Document Center',
   '/settings':    'Settings',
   '/biometric':   'Biometric',
 }
@@ -44,6 +45,7 @@ const navGroups = [
       { href: '/accounts',    icon: Landmark,        label: 'Accounts'    },
       { href: '/whatsapp',    icon: MessageCircle,   label: 'WhatsApp'    },
       { href: '/reports',     icon: BarChart3,       label: 'Reports'     },
+      { href: '/documents',   icon: FileSpreadsheet, label: 'Document Center' },
     ],
   },
   {
