@@ -35,6 +35,8 @@ export interface AccountsOverview {
   pendingSalaryCount: number
   pendingExpensesTotal: number
   pendingExpensesCount: number
+  pendingMembershipTotal: number
+  pendingMembershipCount: number
   monthlyTrend: MonthlyTrendPoint[]
   expensesByCategory: CategoryTotal[]
   paymentsByMethod: CategoryTotal[]
@@ -44,6 +46,7 @@ export interface AccountsOverview {
 const EMPTY: AccountsOverview = {
   selectedMonthRevenue: 0, selectedMonthExpenses: 0, selectedMonthSalary: 0, selectedMonthNet: 0, allTimeNet: 0,
   pendingSalaryTotal: 0, pendingSalaryCount: 0, pendingExpensesTotal: 0, pendingExpensesCount: 0,
+  pendingMembershipTotal: 0, pendingMembershipCount: 0,
   monthlyTrend: [], expensesByCategory: [], paymentsByMethod: [], ledger: [],
 }
 
@@ -85,6 +88,7 @@ export async function getAccountsOverview(month?: string): Promise<AccountsOverv
       { data: paymentsLedger },
       { data: expenses },
       { data: salaries },
+      { data: pendingMemberships },
     ] = await Promise.all([
       supabase.from('payments').select('amount, payment_method, payment_date'),
       // Scoped directly to the selected month's date range — pulling from the
@@ -99,6 +103,10 @@ export async function getAccountsOverview(month?: string): Promise<AccountsOverv
         .limit(500),
       supabase.from('expenses').select('*'),
       supabase.from('staff_salaries').select('*'),
+      supabase
+        .from('memberships')
+        .select('amount, member:members!memberships_member_id_fkey(full_name)')
+        .eq('payment_pending', true),
     ])
 
     type PaymentLite = { amount: number; payment_method: string; payment_date: string }
@@ -126,6 +134,8 @@ export async function getAccountsOverview(month?: string): Promise<AccountsOverv
     // ── Pending ──
     const pendingSalaries = salaryRows.filter(s => s.status === 'pending')
     const pendingExpenses = expenseRows.filter(e => e.status === 'pending')
+    type PendingMembership = { amount: number }
+    const pendingMembershipRows = (pendingMemberships ?? []) as PendingMembership[]
 
     // ── Monthly trend, last 6 months ──
     const monthKeys: string[] = []
@@ -206,6 +216,8 @@ export async function getAccountsOverview(month?: string): Promise<AccountsOverv
       pendingSalaryCount: pendingSalaries.length,
       pendingExpensesTotal: pendingExpenses.reduce((s, e) => s + e.amount, 0),
       pendingExpensesCount: pendingExpenses.length,
+      pendingMembershipTotal: pendingMembershipRows.reduce((s, m) => s + m.amount, 0),
+      pendingMembershipCount: pendingMembershipRows.length,
       monthlyTrend,
       expensesByCategory,
       paymentsByMethod,

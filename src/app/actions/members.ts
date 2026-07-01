@@ -68,7 +68,7 @@ export async function getMembers(search?: string): Promise<Member[]> {
       .select(`
         *,
         active_membership:memberships!memberships_member_id_fkey(
-          id, expiry_date, status, plan_id, start_date, amount, amount_note, created_at
+          id, expiry_date, status, plan_id, start_date, amount, amount_note, payment_pending, created_at
         )
       `)
       .is('deleted_at', null)
@@ -110,7 +110,7 @@ export async function getMember(id: string): Promise<Member | null> {
       .select(`
         *,
         active_membership:memberships!memberships_member_id_fkey(
-          id, expiry_date, status, plan_id, start_date, amount, amount_note, created_at
+          id, expiry_date, status, plan_id, start_date, amount, amount_note, payment_pending, created_at
         )
       `)
       .eq('id', id)
@@ -176,10 +176,11 @@ export async function createMember(
 
     if (error) throw error
 
-    // Only record admission fee payment when joining today — backdated entries
-    // are historical imports and must not affect accounts revenue.
+    // Record admission fee only when joining today AND marked as paid now.
+    // Backdated entries and "not paid yet" entries skip the payment record.
     const paymentMethod = data.get('payment_method') as string | null
-    if (isToday && inserted && admissionFee && parseFloat(admissionFee) > 0 && paymentMethod) {
+    const paidNow = data.get('paid_now') === 'true'
+    if (isToday && paidNow && inserted && admissionFee && parseFloat(admissionFee) > 0 && paymentMethod) {
       await supabase.from('payments').insert({
         member_id: (inserted as { id: string }).id,
         amount: parseFloat(admissionFee),

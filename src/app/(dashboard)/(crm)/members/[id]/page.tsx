@@ -311,6 +311,11 @@ export default async function MemberDetailPage({
                       <AlertCircle className="w-3 h-3" /> Price adjusted
                     </p>
                   )}
+                  {membership.payment_pending && (
+                    <p className="inline-flex items-center gap-1 text-xs text-orange-400 mt-1">
+                      <AlertCircle className="w-3 h-3" /> Payment pending
+                    </p>
+                  )}
                 </div>
                 <div className="space-y-0.5">
                   <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">

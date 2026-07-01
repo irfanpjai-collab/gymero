@@ -41,6 +41,7 @@ export interface Membership {
   expiry_date: string
   amount: number
   amount_note?: string | null
+  payment_pending?: boolean
   status: 'active' | 'expired' | 'cancelled'
   created_at: string
   member?: Member

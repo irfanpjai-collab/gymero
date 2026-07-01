@@ -31,13 +31,15 @@ export async function createMembership(data: {
   amount: number
   amount_note?: string
   payment_method: string
-  skip_payment?: boolean
+  skip_payment?: boolean  // true = backdated historical entry, no payment record, no pending flag
+  paid_now?: boolean      // false = today but not yet paid, sets payment_pending=true
 }): Promise<{ error?: string; id?: string }> {
   try {
     const profile = await requireRole(['admin', 'receptionist'])
     const supabase = await createClient()
 
-    if (!data.skip_payment && !data.payment_method) {
+    const recordPayment = !data.skip_payment && data.paid_now !== false
+    if (recordPayment && !data.payment_method) {
       throw new Error('Payment method is required — a membership cannot be activated without recording a payment')
     }
 
@@ -77,16 +79,16 @@ export async function createMembership(data: {
         amount_note: data.amount !== fee ? data.amount_note?.trim() : null,
         status: 'active',
         created_by: profile.user_id,
+        // payment_pending=true only when today's member explicitly hasn't paid yet.
+        // Backdated historical imports are not a pending debt, so they stay false.
+        payment_pending: !data.skip_payment && data.paid_now === false,
       })
       .select('id')
       .single()
 
     if (error) throw error
 
-    // skip_payment=true means this is a historical/backdated import — the
-    // membership record is created for status tracking but no payment is
-    // recorded so it doesn't inflate past or current accounts revenue.
-    if (!data.skip_payment) {
+    if (recordPayment) {
       const { error: paymentError } = await supabase.from('payments').insert({
         member_id: data.member_id,
         membership_id: (inserted as { id: string }).id,

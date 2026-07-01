@@ -67,6 +67,9 @@ export default function NewMemberPage() {
   const [joinDate, setJoinDate] = useState(today)
   const isBackdated = joinDate !== today
 
+  // "Paid now" only applies when joining today; backdated always skips payment
+  const [paidNow, setPaidNow] = useState(true)
+
   // Membership toggle
   const [addMembership, setAddMembership] = useState(false)
   const [plans, setPlans] = useState<MembershipPlan[]>([])
@@ -130,6 +133,7 @@ export default function NewMemberPage() {
           amount_note: amountNote.trim() || undefined,
           payment_method: paymentMethod,
           skip_payment: isBackdated,
+          paid_now: isBackdated ? undefined : paidNow,
         })
 
         if (membershipResult.error) {
@@ -285,13 +289,47 @@ export default function NewMemberPage() {
             </Field>
           </div>
 
-          {/* Backdated entry notice */}
+          {/* Payment status — hidden when backdated (always skipped for historical entries) */}
+          <input type="hidden" name="paid_now" value={String(!isBackdated && paidNow)} />
+          {!isBackdated && (
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => setPaidNow((v) => !v)}
+              onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setPaidNow((v) => !v)}
+              className={`flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer select-none transition-colors ${
+                paidNow
+                  ? 'bg-emerald-500/10 border-emerald-500/30'
+                  : 'bg-amber-500/10 border-amber-500/30'
+              }`}
+            >
+              <div className={`w-5 h-5 rounded flex items-center justify-center border-2 shrink-0 transition-colors ${
+                paidNow ? 'bg-emerald-500 border-emerald-500' : 'border-amber-500/60 bg-transparent'
+              }`}>
+                {paidNow && (
+                  <svg viewBox="0 0 12 12" fill="none" className="w-3 h-3">
+                    <path d="M2 6l3 3 5-5" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
+              </div>
+              <div>
+                <p className={`text-sm font-semibold ${paidNow ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  {paidNow ? 'Paid now' : 'Payment pending'}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {paidNow
+                    ? 'Admission fee and membership payment will be recorded'
+                    : 'Membership created but no payment recorded — visible as pending in Accounts'}
+                </p>
+              </div>
+            </div>
+          )}
           {isBackdated && (
             <div className="flex items-start gap-2.5 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs">
               <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
               <span>
                 <span className="font-semibold">Historical entry</span> — joining date is in the past.
-                Membership will be created for status tracking, but no payment records will be added so accounts are not affected.
+                Membership created for status tracking only, no payment records added.
               </span>
             </div>
           )}

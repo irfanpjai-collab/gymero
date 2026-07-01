@@ -183,8 +183,22 @@ export default function AccountsClient() {
       </div>
 
       {/* Pending summary */}
-      {(data.pendingSalaryCount > 0 || data.pendingExpensesCount > 0) && (
+      {(data.pendingSalaryCount > 0 || data.pendingExpensesCount > 0 || data.pendingMembershipCount > 0) && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {data.pendingMembershipCount > 0 && (
+            <Link href="/members" className="bg-card rounded-2xl border border-orange-500/20 p-5 flex items-center justify-between hover:bg-orange-500/[0.03] transition-colors group">
+              <div className="flex items-center gap-4">
+                <div className="w-11 h-11 rounded-xl bg-orange-500/10 flex items-center justify-center flex-shrink-0">
+                  <CreditCard className="w-5 h-5 text-orange-400" />
+                </div>
+                <div>
+                  <p className="text-lg font-bold text-foreground">{formatCurrency(data.pendingMembershipTotal)}</p>
+                  <p className="text-muted-foreground text-sm">{data.pendingMembershipCount} pending membership payment{data.pendingMembershipCount !== 1 ? 's' : ''}</p>
+                </div>
+              </div>
+              <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground transition-colors" />
+            </Link>
+          )}
           {data.pendingSalaryCount > 0 && (
             <Link href="/salary" className="bg-card rounded-2xl border border-amber-500/20 p-5 flex items-center justify-between hover:bg-amber-500/[0.03] transition-colors group">
               <div className="flex items-center gap-4">
