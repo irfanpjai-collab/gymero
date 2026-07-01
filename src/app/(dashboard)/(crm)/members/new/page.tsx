@@ -166,12 +166,17 @@ export default function NewMemberPage() {
 
           {/* Member ID + Full Name */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Member ID">
+            <Field label="Member ID" required>
               <input
-                type="text"
-                value={memberIdLoading ? 'Loading…' : `#${memberId} (auto-assigned)`}
-                disabled
-                className={`${inputCls} opacity-60 cursor-not-allowed`}
+                type="number"
+                name="member_id"
+                required
+                min={1}
+                step={1}
+                value={memberId}
+                onChange={(e) => setMemberId(e.target.value)}
+                placeholder={memberIdLoading ? 'Loading…' : 'e.g. 101'}
+                className={inputCls}
               />
             </Field>
             <Field label="Full Name" required>
@@ -429,7 +434,7 @@ export default function NewMemberPage() {
           </Link>
           <button
             type="submit"
-            disabled={isPending || memberIdLoading}
+            disabled={isPending}
             className="inline-flex items-center gap-2 px-6 py-2.5 bg-primary hover:bg-primary/90 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-xl text-sm font-semibold transition-colors"
           >
             {isPending ? (

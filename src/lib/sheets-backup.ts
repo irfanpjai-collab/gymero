@@ -1,6 +1,12 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { ensureSheetTabs, overwriteSheetTab, appendSheetRow } from '@/lib/google-sheets'
 
+const MEMBERS_SYNC_TAB = 'Members'
+const MEMBER_COLUMNS = [
+  'member_id', 'full_name', 'mobile', 'email', 'gender',
+  'join_date', 'address', 'admission_fee', 'notes', 'created_at',
+]
+
 // One tab per table, fully overwritten each run — that's the actual backup.
 // Shared by the weekly cron job and the manual "Backup now" button on the
 // Document Center page, so there's exactly one place this list and logic live.
@@ -44,6 +50,33 @@ function rowsToGrid(rows: Record<string, unknown>[]): unknown[][] {
   if (rows.length === 0) return []
   const headers = Object.keys(rows[0])
   return [headers, ...rows.map((r) => headers.map((h) => toSheetValue(r[h])))]
+}
+
+/** Overwrites the "Members" live-sync tab with every current (non-deleted) member.
+ *  Called fire-and-forget after createMember / updateMember / importMembers.
+ *  Silently skips if the spreadsheet env var isn't configured. */
+export async function syncMembersSheet(): Promise<void> {
+  const spreadsheetId = process.env.GOOGLE_SHEETS_BACKUP_SPREADSHEET_ID
+  if (!spreadsheetId) return
+
+  const supabase = createAdminClient()
+  const { data: members } = await supabase
+    .from('members')
+    .select('member_id, full_name, mobile, email, gender, join_date, address, admission_fee, notes, created_at')
+    .is('deleted_at', null)
+    .order('member_id', { ascending: true })
+
+  if (!members) return
+
+  const grid: unknown[][] = [
+    MEMBER_COLUMNS,
+    ...members.map((m) =>
+      MEMBER_COLUMNS.map((col) => toSheetValue((m as Record<string, unknown>)[col]))
+    ),
+  ]
+
+  await ensureSheetTabs(spreadsheetId, [MEMBERS_SYNC_TAB])
+  await overwriteSheetTab(spreadsheetId, MEMBERS_SYNC_TAB, grid)
 }
 
 export interface SheetsBackupResult {

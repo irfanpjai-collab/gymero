@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth'
 import { revalidatePath } from 'next/cache'
+import { syncMembersSheet } from '@/lib/sheets-backup'
 import type { Member, ImportMemberRow } from '@/types'
 
 // Queues an outbound-only ADMS enroll command — a plain DB insert, nothing
@@ -138,11 +139,11 @@ export async function createMember(
     const profile = await requireRole(['admin', 'receptionist'])
     const supabase = await createClient()
 
-    // member_id is assigned by a DB sequence (member_id_seq, see
-    // accounts_integrity_fixes.sql) — reading MAX()+1 here and inserting
-    // separately let two simultaneous submissions compute the same "next" id;
-    // the same race that coach_id was already fixed for elsewhere.
+    const memberIdRaw = parseInt(data.get('member_id') as string)
+    if (!memberIdRaw || memberIdRaw < 1) throw new Error('Member ID is required')
+
     const payload: Record<string, unknown> = {
+      member_id: memberIdRaw,
       full_name: data.get('full_name') as string,
       mobile: data.get('mobile') as string,
       gender: data.get('gender') as string,
@@ -185,6 +186,7 @@ export async function createMember(
     }
 
     await pushNewMembersToDevice([(inserted as { id: string }).id], profile.user_id)
+    syncMembersSheet().catch((err) => console.error('[sheets] members sync failed:', err))
 
     revalidatePath('/members')
     revalidatePath('/payments')
@@ -216,6 +218,8 @@ export async function updateMember(
     const { error } = await supabase.from('members').update(payload).eq('id', id)
 
     if (error) throw error
+
+    syncMembersSheet().catch((err) => console.error('[sheets] members sync failed:', err))
 
     revalidatePath('/members')
     return {}
@@ -359,6 +363,7 @@ export async function importMembers(
   }
 
   await pushNewMembersToDevice(newMemberIds, requestedBy)
+  syncMembersSheet().catch((err) => console.error('[sheets] members sync failed:', err))
 
   revalidatePath('/members')
   return { imported, errors }
