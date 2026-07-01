@@ -60,7 +60,7 @@ export default function NewMemberPage() {
   // Member fields
   const [memberId, setMemberId] = useState<string>('')
   const [memberIdLoading, setMemberIdLoading] = useState(true)
-  const [admissionFee, setAdmissionFee] = useState<string>('1000')
+  const [admissionFee, setAdmissionFee] = useState<string>('600')
 
   // Membership toggle
   const [addMembership, setAddMembership] = useState(false)

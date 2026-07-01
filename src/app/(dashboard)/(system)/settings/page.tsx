@@ -28,7 +28,7 @@ export default function SettingsPage() {
     name: 'Fitness Gym',
     address: '',
     phone: '',
-    admissionFee: 1000,
+    admissionFee: 600,
     gracePeriodDays: 180,
   })
   const [plans, setPlans] = useState<MembershipPlan[]>([])
@@ -63,7 +63,7 @@ export default function SettingsPage() {
       setSettings(s => ({
         ...s,
         ...parsed,
-        admissionFee: parsed.admissionFee !== undefined ? Number(parsed.admissionFee) : 1000,
+        admissionFee: parsed.admissionFee !== undefined ? Number(parsed.admissionFee) : 600,
         gracePeriodDays: parsed.gracePeriodDays !== undefined ? Number(parsed.gracePeriodDays) : 180,
       }))
     }
