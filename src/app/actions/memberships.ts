@@ -31,12 +31,13 @@ export async function createMembership(data: {
   amount: number
   amount_note?: string
   payment_method: string
+  skip_payment?: boolean
 }): Promise<{ error?: string; id?: string }> {
   try {
     const profile = await requireRole(['admin', 'receptionist'])
     const supabase = await createClient()
 
-    if (!data.payment_method) {
+    if (!data.skip_payment && !data.payment_method) {
       throw new Error('Payment method is required — a membership cannot be activated without recording a payment')
     }
 
@@ -82,17 +83,22 @@ export async function createMembership(data: {
 
     if (error) throw error
 
-    const { error: paymentError } = await supabase.from('payments').insert({
-      member_id: data.member_id,
-      membership_id: (inserted as { id: string }).id,
-      amount: data.amount,
-      payment_method: data.payment_method,
-      payment_type: 'membership',
-      payment_date: data.start_date,
-      notes: 'Auto-recorded on membership creation',
-      created_by: profile.user_id,
-    })
-    if (paymentError) throw new Error(`Membership created but payment failed to record: ${paymentError.message}`)
+    // skip_payment=true means this is a historical/backdated import — the
+    // membership record is created for status tracking but no payment is
+    // recorded so it doesn't inflate past or current accounts revenue.
+    if (!data.skip_payment) {
+      const { error: paymentError } = await supabase.from('payments').insert({
+        member_id: data.member_id,
+        membership_id: (inserted as { id: string }).id,
+        amount: data.amount,
+        payment_method: data.payment_method,
+        payment_type: 'membership',
+        payment_date: data.start_date,
+        notes: 'Auto-recorded on membership creation',
+        created_by: profile.user_id,
+      })
+      if (paymentError) throw new Error(`Membership created but payment failed to record: ${paymentError.message}`)
+    }
 
     revalidatePath('/members')
     revalidatePath('/payments')

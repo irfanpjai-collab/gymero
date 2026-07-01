@@ -142,12 +142,16 @@ export async function createMember(
     const memberIdRaw = parseInt(data.get('member_id') as string)
     if (!memberIdRaw || memberIdRaw < 1) throw new Error('Member ID is required')
 
+    const joinDate = (data.get('join_date') as string) || new Date().toISOString().slice(0, 10)
+    const today = new Date().toISOString().slice(0, 10)
+    const isToday = joinDate === today
+
     const payload: Record<string, unknown> = {
       member_id: memberIdRaw,
       full_name: data.get('full_name') as string,
       mobile: data.get('mobile') as string,
       gender: data.get('gender') as string,
-      join_date: (data.get('join_date') as string) || new Date().toISOString().slice(0, 10),
+      join_date: joinDate,
     }
 
     const email = data.get('email') as string | null
@@ -172,15 +176,16 @@ export async function createMember(
 
     if (error) throw error
 
-    // Auto-record admission fee payment if payment_method is provided
+    // Only record admission fee payment when joining today — backdated entries
+    // are historical imports and must not affect accounts revenue.
     const paymentMethod = data.get('payment_method') as string | null
-    if (inserted && admissionFee && parseFloat(admissionFee) > 0 && paymentMethod) {
+    if (isToday && inserted && admissionFee && parseFloat(admissionFee) > 0 && paymentMethod) {
       await supabase.from('payments').insert({
         member_id: (inserted as { id: string }).id,
         amount: parseFloat(admissionFee),
         payment_method: paymentMethod,
         payment_type: 'admission',
-        payment_date: payload.join_date,
+        payment_date: joinDate,
         notes: 'Auto-recorded admission fee on member creation',
       })
     }

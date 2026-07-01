@@ -15,6 +15,7 @@ import {
   Dumbbell,
   ChevronDown,
   Loader2,
+  Info,
 } from 'lucide-react'
 import { createMember } from '@/app/actions/members'
 import { createMembership, getPlans } from '@/app/actions/memberships'
@@ -61,6 +62,10 @@ export default function NewMemberPage() {
   const [memberId, setMemberId] = useState<string>('')
   const [memberIdLoading, setMemberIdLoading] = useState(true)
   const [admissionFee, setAdmissionFee] = useState<string>('600')
+
+  // Track join date to detect backdated entries
+  const [joinDate, setJoinDate] = useState(today)
+  const isBackdated = joinDate !== today
 
   // Membership toggle
   const [addMembership, setAddMembership] = useState(false)
@@ -124,6 +129,7 @@ export default function NewMemberPage() {
           amount: parseFloat(amount) || 0,
           amount_note: amountNote.trim() || undefined,
           payment_method: paymentMethod,
+          skip_payment: isBackdated,
         })
 
         if (membershipResult.error) {
@@ -248,7 +254,8 @@ export default function NewMemberPage() {
                 <input
                   type="date"
                   name="join_date"
-                  defaultValue={today}
+                  value={joinDate}
+                  onChange={(e) => setJoinDate(e.target.value)}
                   required
                   className={`${inputCls} pl-9`}
                 />
@@ -277,6 +284,17 @@ export default function NewMemberPage() {
               </div>
             </Field>
           </div>
+
+          {/* Backdated entry notice */}
+          {isBackdated && (
+            <div className="flex items-start gap-2.5 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs">
+              <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+              <span>
+                <span className="font-semibold">Historical entry</span> — joining date is in the past.
+                Membership will be created for status tracking, but no payment records will be added so accounts are not affected.
+              </span>
+            </div>
+          )}
 
           {/* Notes */}
           <Field label="Notes">
