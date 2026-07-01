@@ -170,7 +170,7 @@ export default function RenewDialog({
     ? (() => {
         const d = new Date(startDate)
         d.setMonth(d.getMonth() + selectedPlan.duration_months)
-        return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+        return d.toLocaleDateString('en-GB')
       })()
     : null
 
@@ -212,7 +212,7 @@ export default function RenewDialog({
                     <p className="text-xs text-red-300">
                       {lastExpiryDate ? (
                         <>
-                          Membership expired on {new Date(lastExpiryDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} ({daysSince} days ago). 
+                          Membership expired on {new Date(lastExpiryDate).toLocaleDateString('en-GB')} ({daysSince} days ago).
                           This exceeds the {gracePeriodDays}-day grace period. An admission fee of ₹{defaultAdmissionFee} is required.
                         </>
                       ) : (

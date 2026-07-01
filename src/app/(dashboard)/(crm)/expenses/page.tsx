@@ -195,7 +195,7 @@ function ExpenseRow({
 
   return (
     <tr className="border-b border-border last:border-0 hover:bg-muted/20 transition-colors">
-      <td className="px-5 py-4 text-muted-foreground text-sm">{new Date(expense.expense_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</td>
+      <td className="px-5 py-4 text-muted-foreground text-sm">{new Date(expense.expense_date).toLocaleDateString('en-GB')}</td>
       <td className="px-4 py-4">
         <span className={`text-xs font-medium px-2.5 py-1 rounded-full border capitalize ${CATEGORY_COLORS[expense.category]}`}>
           {expense.category.replace(/_/g, ' ')}

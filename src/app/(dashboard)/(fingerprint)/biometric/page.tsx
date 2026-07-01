@@ -39,7 +39,7 @@ function formatDateTime(iso: string | null) {
   if (!iso) return '—'
   try {
     const d = new Date(iso)
-    return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+    return d.toLocaleDateString('en-GB')
       + ' ' + d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
   } catch { return iso }
 }
@@ -267,7 +267,7 @@ export default function BiometricPage() {
           <div className="bg-card rounded-2xl border border-border overflow-hidden">
             <div className="px-5 py-4 border-b border-border">
               <span className="text-foreground font-semibold text-sm">
-                {isToday ? "Today's Attendance" : `Attendance — ${new Date(attendanceDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`}
+                {isToday ? "Today's Attendance" : `Attendance — ${new Date(attendanceDate).toLocaleDateString('en-GB')}`}
               </span>
             </div>
             {filteredAttendance.length === 0 ? (

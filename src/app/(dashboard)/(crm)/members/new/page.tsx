@@ -463,11 +463,7 @@ export default function NewMemberPage() {
                           <>
                             Expiry:{' '}
                             <span className="text-foreground font-medium">
-                              {expiry.toLocaleDateString('en-IN', {
-                                day: 'numeric',
-                                month: 'short',
-                                year: 'numeric',
-                              })}
+                              {expiry.toLocaleDateString('en-GB')}
                             </span>
                           </>
                         )

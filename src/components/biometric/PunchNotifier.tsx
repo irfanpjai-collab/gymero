@@ -170,7 +170,7 @@ export default function PunchNotifier() {
             <div className="col-span-2 pt-1 border-t border-border">
               <p className="text-[11px] text-muted-foreground uppercase tracking-wider mt-3 mb-0.5">Membership Expires</p>
               <p className="text-sm text-foreground">
-                {new Date(current.expiryDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                {new Date(current.expiryDate).toLocaleDateString('en-GB')}
               </p>
             </div>
           )}

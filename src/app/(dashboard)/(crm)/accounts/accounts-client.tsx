@@ -309,7 +309,7 @@ export default function AccountsClient() {
                   return (
                     <tr key={entry.id} className="border-b border-border last:border-0 hover:bg-muted/20 transition-colors">
                       <td className="px-5 py-3 text-muted-foreground font-mono text-xs">
-                        {new Date(entry.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                        {new Date(entry.date).toLocaleDateString('en-GB')}
                       </td>
                       <td className="px-4 py-3">
                         <span className={`text-xs font-medium px-2.5 py-1 rounded-full border ${typeStyle.cls}`}>{typeStyle.label}</span>
