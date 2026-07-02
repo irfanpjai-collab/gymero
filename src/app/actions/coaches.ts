@@ -2,7 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth'
-import { revalidatePath } from 'next/cache'
+import { revalidatePath, revalidateTag } from 'next/cache'
 import type { Coach, Member } from '@/types'
 
 export async function getCoaches(): Promise<Coach[]> {
@@ -46,6 +46,7 @@ export async function createCoach(data: FormData): Promise<{ error?: string }> {
 
     if (error) throw error
 
+    revalidateTag('coaches', {})
     revalidatePath('/coaches')
     return {}
   } catch (err) {
@@ -81,6 +82,7 @@ export async function updateCoach(
 
     if (error) throw error
 
+    revalidateTag('coaches', {})
     revalidatePath('/coaches')
     return {}
   } catch (err) {
@@ -124,6 +126,7 @@ export async function assignMember(
 
     if (error) throw error
 
+    revalidateTag('coaches', {})
     revalidatePath('/coaches')
     return {}
   } catch (err) {
@@ -148,6 +151,7 @@ export async function unassignMember(
 
     if (error) throw error
 
+    revalidateTag('coaches', {})
     revalidatePath('/coaches')
     return {}
   } catch (err) {

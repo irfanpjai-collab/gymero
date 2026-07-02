@@ -11,12 +11,14 @@ import {
   Ticket,
   RefreshCw,
 } from 'lucide-react'
-import { getDashboardStats, getGracePeriodMembers, getExpiringMembers } from '@/app/actions/dashboard'
-import { getMembers } from '@/app/actions/members'
+import {
+  getCachedDashboardStats,
+  getCachedGracePeriodMembers,
+  getCachedExpiringMembers,
+  getCachedMembers,
+} from '@/lib/cached-queries'
 import WelcomeBanner from '@/components/dashboard/WelcomeBanner'
 import { formatDate, formatCurrency } from '@/lib/utils'
-
-export const dynamic = 'force-dynamic'
 
 function StatCard({
   label,
@@ -54,10 +56,10 @@ function StatCard({
 
 export default async function DashboardPage() {
   const [stats, gracePeriodMembers, expiringMembers, allMembers] = await Promise.all([
-    getDashboardStats(),
-    getGracePeriodMembers(8),
-    getExpiringMembers(7),
-    getMembers(),
+    getCachedDashboardStats(),
+    getCachedGracePeriodMembers(8),
+    getCachedExpiringMembers(7),
+    getCachedMembers(),
   ])
 
   const today = new Date()

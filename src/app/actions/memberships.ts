@@ -2,7 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth'
-import { revalidatePath } from 'next/cache'
+import { revalidatePath, revalidateTag } from 'next/cache'
 import { syncPaymentsSheet } from '@/lib/sheets-backup'
 import type { MembershipPlan } from '@/types'
 
@@ -104,6 +104,8 @@ export async function createMembership(data: {
     }
 
     syncPaymentsSheet().catch((err) => console.error('[sheets] payments sync failed:', err))
+    revalidateTag('payments', {})
+    revalidateTag('members', {})
     revalidatePath('/members')
     revalidatePath('/payments')
     return { id: (inserted as { id: string }).id }
@@ -240,6 +242,8 @@ export async function renewMembership(
     }
 
     syncPaymentsSheet().catch((err) => console.error('[sheets] payments sync failed:', err))
+    revalidateTag('payments', {})
+    revalidateTag('members', {})
     revalidatePath('/members')
     revalidatePath('/payments')
     return {}

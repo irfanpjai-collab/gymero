@@ -2,7 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth'
-import { revalidatePath } from 'next/cache'
+import { revalidatePath, revalidateTag } from 'next/cache'
 import { syncMembersSheet, syncPaymentsSheet } from '@/lib/sheets-backup'
 import type { Member, ImportMemberRow } from '@/types'
 
@@ -195,6 +195,8 @@ export async function createMember(
     syncMembersSheet().catch((err) => console.error('[sheets] members sync failed:', err))
     syncPaymentsSheet().catch((err) => console.error('[sheets] payments sync failed:', err))
 
+    revalidateTag('members', {})
+    revalidateTag('payments', {})
     revalidatePath('/members')
     revalidatePath('/payments')
     return { memberId: (inserted as { id: string }).id }
@@ -228,6 +230,7 @@ export async function updateMember(
 
     syncMembersSheet().catch((err) => console.error('[sheets] members sync failed:', err))
 
+    revalidateTag('members', {})
     revalidatePath('/members')
     return {}
   } catch (err) {
@@ -261,6 +264,7 @@ export async function deleteMember(id: string): Promise<{ error?: string }> {
 
     if (existing) await removeMemberFromDevice((existing as { member_id: number }).member_id, profile.user_id)
 
+    revalidateTag('members', {})
     revalidatePath('/members')
     return {}
   } catch (err) {
@@ -378,6 +382,7 @@ export async function importMembers(
   await pushNewMembersToDevice(newMemberIds, requestedBy)
   syncMembersSheet().catch((err) => console.error('[sheets] members sync failed:', err))
 
+  revalidateTag('members', {})
   revalidatePath('/members')
   return { imported, errors }
 }

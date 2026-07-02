@@ -2,7 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth'
-import { revalidatePath } from 'next/cache'
+import { revalidatePath, revalidateTag } from 'next/cache'
 
 export interface StaffSalary {
   id: string
@@ -71,6 +71,7 @@ export async function createSalary(data: {
       created_by: profile.user_id,
     })
     if (error) throw error
+    revalidateTag('salary', {})
     revalidatePath('/salary')
     return {}
   } catch (err) {
@@ -88,6 +89,7 @@ export async function markSalaryPaid(id: string): Promise<{ error?: string }> {
       .update({ status: 'paid', paid_at: new Date().toISOString().slice(0, 10) })
       .eq('id', id)
     if (error) throw error
+    revalidateTag('salary', {})
     revalidatePath('/salary')
     return {}
   } catch (err) {
@@ -108,6 +110,7 @@ export async function updateSalary(
       .update(data)
       .eq('id', id)
     if (error) throw error
+    revalidateTag('salary', {})
     revalidatePath('/salary')
     return {}
   } catch (err) {
@@ -122,6 +125,7 @@ export async function deleteSalary(id: string): Promise<{ error?: string }> {
     const supabase = await createClient()
     const { error } = await supabase.from('staff_salaries').delete().eq('id', id)
     if (error) throw error
+    revalidateTag('salary', {})
     revalidatePath('/salary')
     return {}
   } catch (err) {

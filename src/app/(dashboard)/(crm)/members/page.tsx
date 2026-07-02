@@ -11,7 +11,7 @@ import {
   ChevronRight,
   UserX,
 } from 'lucide-react'
-import { getMembers } from '@/app/actions/members'
+import { getCachedMembers } from '@/lib/cached-queries'
 import { formatDate, getMembershipStatus, getStatusColor } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import type { Member } from '@/types'
@@ -96,7 +96,7 @@ async function MembersTable({
   statusFilter?: string
   page: number
 }) {
-  const allMembers = await getMembers(search)
+  const allMembers = await getCachedMembers(search)
 
   const filtered = allMembers.filter((m) => {
     if (!statusFilter || statusFilter === 'all') return true

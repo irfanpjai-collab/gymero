@@ -2,7 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth'
-import { revalidatePath } from 'next/cache'
+import { revalidatePath, revalidateTag } from 'next/cache'
 import { syncExpensesSheet } from '@/lib/sheets-backup'
 
 // Plain runtime exports (consts/arrays) don't survive the 'use server'
@@ -74,6 +74,7 @@ export async function createExpense(data: {
     })
     if (error) throw error
     syncExpensesSheet().catch((err) => console.error('[sheets] expenses sync failed:', err))
+    revalidateTag('expenses', {})
     revalidatePath('/expenses')
     return {}
   } catch (err) {
@@ -92,6 +93,7 @@ export async function markExpensePaid(id: string): Promise<{ error?: string }> {
       .eq('id', id)
     if (error) throw error
     syncExpensesSheet().catch((err) => console.error('[sheets] expenses sync failed:', err))
+    revalidateTag('expenses', {})
     revalidatePath('/expenses')
     return {}
   } catch (err) {
@@ -107,6 +109,7 @@ export async function deleteExpense(id: string): Promise<{ error?: string }> {
     const { error } = await supabase.from('expenses').delete().eq('id', id)
     if (error) throw error
     syncExpensesSheet().catch((err) => console.error('[sheets] expenses sync failed:', err))
+    revalidateTag('expenses', {})
     revalidatePath('/expenses')
     return {}
   } catch (err) {

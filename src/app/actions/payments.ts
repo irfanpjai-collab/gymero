@@ -2,7 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth'
-import { revalidatePath } from 'next/cache'
+import { revalidatePath, revalidateTag } from 'next/cache'
 import { syncPaymentsSheet } from '@/lib/sheets-backup'
 import type { Payment } from '@/types'
 
@@ -70,6 +70,7 @@ export async function recordPayment(data: {
     if (error) throw error
 
     syncPaymentsSheet().catch((err) => console.error('[sheets] payments sync failed:', err))
+    revalidateTag('payments', {})
     revalidatePath('/payments')
     return { payment: inserted as Payment }
   } catch (err) {
