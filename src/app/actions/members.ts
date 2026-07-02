@@ -315,6 +315,7 @@ export async function importMembers(
         gender: 'male', // default; override if provided
       }
 
+      if (row.address) memberPayload.address = row.address
       if (row.notes) memberPayload.notes = row.notes
 
       const { data: insertedMember, error: memberError } = await supabase

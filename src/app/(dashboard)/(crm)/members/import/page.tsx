@@ -11,13 +11,13 @@ import type { ImportMemberRow } from '@/types'
 import { Button } from '@/components/ui/button'
 
 const REQUIRED_COLUMNS = ['Member ID', 'Full Name', 'Mobile', 'Join Date']
-const OPTIONAL_COLUMNS = ['Plan Name', 'Expiry Date', 'Amount Paid', 'Notes']
+const OPTIONAL_COLUMNS = ['Address']
 const TEMPLATE_COLUMNS = [...REQUIRED_COLUMNS, ...OPTIONAL_COLUMNS]
 
 function downloadTemplate() {
   const sampleData = [
-    { 'Member ID': 100, 'Full Name': 'John Doe', 'Mobile': '9876543210', 'Join Date': '2024-01-01', 'Plan Name': 'Monthly', 'Expiry Date': '2024-02-01', 'Amount Paid': 1000, 'Notes': '' },
-    { 'Member ID': 274, 'Full Name': 'Jane Smith', 'Mobile': '9876543211', 'Join Date': '2024-02-15', 'Plan Name': 'Quarterly', 'Expiry Date': '2024-05-15', 'Amount Paid': 2700, 'Notes': 'Existing member' },
+    { 'Member ID': 100, 'Full Name': 'John Doe', 'Mobile': '9876543210', 'Join Date': '2024-01-01', 'Address': '' },
+    { 'Member ID': 101, 'Full Name': 'Jane Smith', 'Mobile': '9876543211', 'Join Date': '2024-02-15', 'Address': '12 Main Street' },
   ]
   const ws = XLSX.utils.json_to_sheet(sampleData)
   const colWidths = [12, 20, 14, 14, 14, 14, 14, 20]
@@ -38,10 +38,7 @@ function parseRow(row: Record<string, unknown>): ImportMemberRow | null {
     full_name: name,
     mobile,
     join_date: joinDate,
-    plan_name: row['Plan Name'] ? String(row['Plan Name']).trim() : undefined,
-    expiry_date: row['Expiry Date'] ? String(row['Expiry Date']) : undefined,
-    amount_paid: row['Amount Paid'] ? Number(row['Amount Paid']) : undefined,
-    notes: row['Notes'] ? String(row['Notes']) : undefined,
+    address: row['Address'] ? String(row['Address']).trim() : undefined,
   }
 }
 

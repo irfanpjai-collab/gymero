@@ -119,6 +119,7 @@ export interface ImportMemberRow {
   full_name: string
   mobile: string
   join_date?: string
+  address?: string
   plan_name?: string
   expiry_date?: string
   amount_paid?: number
