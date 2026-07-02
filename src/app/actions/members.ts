@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth'
 import { revalidatePath } from 'next/cache'
-import { syncMembersSheet } from '@/lib/sheets-backup'
+import { syncMembersSheet, syncPaymentsSheet } from '@/lib/sheets-backup'
 import type { Member, ImportMemberRow } from '@/types'
 
 // Queues an outbound-only ADMS enroll command — a plain DB insert, nothing
@@ -193,6 +193,7 @@ export async function createMember(
 
     await pushNewMembersToDevice([(inserted as { id: string }).id], profile.user_id)
     syncMembersSheet().catch((err) => console.error('[sheets] members sync failed:', err))
+    syncPaymentsSheet().catch((err) => console.error('[sheets] payments sync failed:', err))
 
     revalidatePath('/members')
     revalidatePath('/payments')
