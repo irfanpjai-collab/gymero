@@ -16,8 +16,8 @@ const TEMPLATE_COLUMNS = [...REQUIRED_COLUMNS, ...OPTIONAL_COLUMNS]
 
 function downloadTemplate() {
   const sampleData = [
-    { 'Member ID': 100, 'Full Name': 'John Doe', 'Mobile': '9876543210', 'Join Date': '2024-01-01', 'Address': '' },
-    { 'Member ID': 101, 'Full Name': 'Jane Smith', 'Mobile': '9876543211', 'Join Date': '2024-02-15', 'Address': '12 Main Street' },
+    { 'Member ID': 100, 'Full Name': 'John Doe', 'Mobile': '9876543210', 'Join Date': '01/01/2024', 'Address': '' },
+    { 'Member ID': 101, 'Full Name': 'Jane Smith', 'Mobile': '9876543211', 'Join Date': '15/02/2024', 'Address': '12 Main Street' },
   ]
   const ws = XLSX.utils.json_to_sheet(sampleData)
   const colWidths = [12, 20, 14, 14, 14, 14, 14, 20]
@@ -27,12 +27,27 @@ function downloadTemplate() {
   XLSX.writeFile(wb, 'fitness-gym-import-template.xlsx')
 }
 
+// Accepts YYYY-MM-DD, DD/MM/YYYY, DD-MM-YYYY, DDMMYYYY → returns YYYY-MM-DD or null
+function parseDate(raw: string): string | null {
+  const s = raw.trim()
+  // Already ISO
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s
+  // DD/MM/YYYY or DD-MM-YYYY
+  const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/)
+  if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, '0')}-${dmy[1].padStart(2, '0')}`
+  // DDMMYYYY
+  if (/^\d{8}$/.test(s)) return `${s.slice(4)}-${s.slice(2, 4)}-${s.slice(0, 2)}`
+  return null
+}
+
 function parseRow(row: Record<string, unknown>): ImportMemberRow | null {
   const name = String(row['Full Name'] ?? row['full_name'] ?? '').trim()
   const mobile = String(row['Mobile'] ?? row['mobile'] ?? '').trim()
-  const joinDate = String(row['Join Date'] ?? row['join_date'] ?? '').trim()
+  const joinDateRaw = String(row['Join Date'] ?? row['join_date'] ?? '').trim()
   const memberId = row['Member ID'] ? Number(row['Member ID']) : undefined
-  if (!name || !mobile || !joinDate || !memberId) return null
+  if (!name || !mobile || !joinDateRaw || !memberId) return null
+  const joinDate = parseDate(joinDateRaw)
+  if (!joinDate) return null
   return {
     member_id: memberId,
     full_name: name,
@@ -70,7 +85,7 @@ export default function ImportPage() {
           if (result) {
             parsed.push(result)
           } else {
-            errors.push(`Row ${i + 2}: Missing Member ID, Full Name, Mobile, or Join Date`)
+            errors.push(`Row ${i + 2}: Missing Member ID, Full Name, Mobile, or invalid Join Date (use DD/MM/YYYY)`)
           }
         })
         setRows(parsed)
