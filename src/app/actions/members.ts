@@ -302,14 +302,19 @@ export async function importMembers(
 
   for (const row of rows) {
     try {
+      if (!row.member_id) {
+        errors.push(`Row ${row.full_name}: Member ID is required`)
+        continue
+      }
+
       const memberPayload: Record<string, unknown> = {
+        member_id: row.member_id,
         full_name: row.full_name,
         mobile: row.mobile,
-        join_date: row.join_date ?? new Date().toISOString().slice(0, 10),
+        join_date: row.join_date,
         gender: 'male', // default; override if provided
       }
 
-      if (row.member_id) memberPayload.member_id = row.member_id
       if (row.notes) memberPayload.notes = row.notes
 
       const { data: insertedMember, error: memberError } = await supabase
@@ -349,7 +354,7 @@ export async function importMembers(
           const membershipPayload: Record<string, unknown> = {
             member_id: memberId,
             expiry_date: row.expiry_date,
-            start_date: row.join_date ?? new Date().toISOString().slice(0, 10),
+            start_date: row.join_date,
             amount: row.amount_paid,
             status: new Date(row.expiry_date) >= new Date() ? 'active' : 'expired',
           }

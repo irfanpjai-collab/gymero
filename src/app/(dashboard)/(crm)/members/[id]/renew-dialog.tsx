@@ -59,7 +59,7 @@ export default function RenewDialog({
   const [admissionFee, setAdmissionFee] = useState('0')
   const [needsAdmissionFee, setNeedsAdmissionFee] = useState(false)
   const [lastExpiryDate, setLastExpiryDate] = useState<string | null>(null)
-  const [defaultAdmissionFee, setDefaultAdmissionFee] = useState(1000)
+  const [defaultAdmissionFee, setDefaultAdmissionFee] = useState(600)
   const [gracePeriodDays, setGracePeriodDays] = useState(180)
   const [daysSince, setDaysSince] = useState<number | null>(null)
   const [paymentMethod, setPaymentMethod] = useState('cash')

@@ -10,7 +10,9 @@ import { importMembers } from '@/app/actions/members'
 import type { ImportMemberRow } from '@/types'
 import { Button } from '@/components/ui/button'
 
-const TEMPLATE_COLUMNS = ['Member ID', 'Full Name', 'Mobile', 'Join Date', 'Plan Name', 'Expiry Date', 'Amount Paid', 'Notes']
+const REQUIRED_COLUMNS = ['Member ID', 'Full Name', 'Mobile', 'Join Date']
+const OPTIONAL_COLUMNS = ['Plan Name', 'Expiry Date', 'Amount Paid', 'Notes']
+const TEMPLATE_COLUMNS = [...REQUIRED_COLUMNS, ...OPTIONAL_COLUMNS]
 
 function downloadTemplate() {
   const sampleData = [
@@ -28,12 +30,14 @@ function downloadTemplate() {
 function parseRow(row: Record<string, unknown>): ImportMemberRow | null {
   const name = String(row['Full Name'] ?? row['full_name'] ?? '').trim()
   const mobile = String(row['Mobile'] ?? row['mobile'] ?? '').trim()
-  if (!name || !mobile) return null
+  const joinDate = String(row['Join Date'] ?? row['join_date'] ?? '').trim()
+  const memberId = row['Member ID'] ? Number(row['Member ID']) : undefined
+  if (!name || !mobile || !joinDate || !memberId) return null
   return {
-    member_id: row['Member ID'] ? Number(row['Member ID']) : undefined,
+    member_id: memberId,
     full_name: name,
     mobile,
-    join_date: row['Join Date'] ? String(row['Join Date']) : undefined,
+    join_date: joinDate,
     plan_name: row['Plan Name'] ? String(row['Plan Name']).trim() : undefined,
     expiry_date: row['Expiry Date'] ? String(row['Expiry Date']) : undefined,
     amount_paid: row['Amount Paid'] ? Number(row['Amount Paid']) : undefined,
@@ -69,7 +73,7 @@ export default function ImportPage() {
           if (result) {
             parsed.push(result)
           } else {
-            errors.push(`Row ${i + 2}: Missing name or mobile`)
+            errors.push(`Row ${i + 2}: Missing Member ID, Full Name, Mobile, or Join Date`)
           }
         })
         setRows(parsed)
@@ -127,12 +131,22 @@ export default function ImportPage() {
             <p className="text-muted-foreground text-sm">Download and fill in the Excel template</p>
           </div>
         </div>
-        <div className="bg-muted/30 rounded-xl p-4 mb-4">
-          <p className="text-muted-foreground text-xs font-medium mb-2">Template columns:</p>
-          <div className="flex flex-wrap gap-2">
-            {TEMPLATE_COLUMNS.map(col => (
-              <span key={col} className="text-xs bg-card border border-border text-muted-foreground px-2 py-1 rounded-lg">{col}</span>
-            ))}
+        <div className="bg-muted/30 rounded-xl p-4 mb-4 space-y-2">
+          <div>
+            <p className="text-muted-foreground text-xs font-medium mb-1.5">Required:</p>
+            <div className="flex flex-wrap gap-2">
+              {REQUIRED_COLUMNS.map(col => (
+                <span key={col} className="text-xs bg-primary/10 border border-primary/30 text-primary px-2 py-1 rounded-lg">{col}</span>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="text-muted-foreground text-xs font-medium mb-1.5">Optional:</p>
+            <div className="flex flex-wrap gap-2">
+              {OPTIONAL_COLUMNS.map(col => (
+                <span key={col} className="text-xs bg-card border border-border text-muted-foreground px-2 py-1 rounded-lg">{col}</span>
+              ))}
+            </div>
           </div>
         </div>
         <Button variant="outline" onClick={downloadTemplate}>
