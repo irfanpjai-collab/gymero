@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth'
 import { revalidatePath } from 'next/cache'
+import { syncExpensesSheet } from '@/lib/sheets-backup'
 
 // Plain runtime exports (consts/arrays) don't survive the 'use server'
 // client/server boundary — only async functions do. The category list itself
@@ -72,6 +73,7 @@ export async function createExpense(data: {
       created_by: profile.user_id,
     })
     if (error) throw error
+    syncExpensesSheet().catch((err) => console.error('[sheets] expenses sync failed:', err))
     revalidatePath('/expenses')
     return {}
   } catch (err) {
@@ -89,6 +91,7 @@ export async function markExpensePaid(id: string): Promise<{ error?: string }> {
       .update({ status: 'paid', paid_at: new Date().toISOString().slice(0, 10) })
       .eq('id', id)
     if (error) throw error
+    syncExpensesSheet().catch((err) => console.error('[sheets] expenses sync failed:', err))
     revalidatePath('/expenses')
     return {}
   } catch (err) {
@@ -103,6 +106,7 @@ export async function deleteExpense(id: string): Promise<{ error?: string }> {
     const supabase = await createClient()
     const { error } = await supabase.from('expenses').delete().eq('id', id)
     if (error) throw error
+    syncExpensesSheet().catch((err) => console.error('[sheets] expenses sync failed:', err))
     revalidatePath('/expenses')
     return {}
   } catch (err) {
