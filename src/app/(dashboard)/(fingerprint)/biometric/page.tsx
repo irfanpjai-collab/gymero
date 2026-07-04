@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { Fragment, useEffect, useState, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import {
   Fingerprint,
@@ -19,6 +19,8 @@ import {
   Clock,
   CircleX,
   Calendar,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -114,6 +116,7 @@ export default function BiometricPage() {
   const [syncing, setSyncing] = useState(false)
   const [attendanceDate, setAttendanceDate] = useState(todayStr())
   const [membershipFilter, setMembershipFilter] = useState<'all' | 'active' | 'expired' | 'none'>('all')
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
 
   // Shared fetch, no loading-spinner side effect — used both for the initial
   // load and for silent background refreshes triggered by Realtime events.
@@ -197,6 +200,33 @@ export default function BiometricPage() {
   const filteredAttendance = attendance.filter(a =>
     membershipFilter === 'all' ? true : (a.membership_status ?? 'none') === membershipFilter
   )
+
+  // One row per member instead of one row per punch — a member who checked
+  // in and out a few times in a day used to flood the table with duplicate
+  // rows. Punches within a group stay latest-first (the source query is
+  // already ordered that way), and groups themselves are sorted by their
+  // own latest punch so the most recently-active member is on top.
+  const attendanceGroups = useMemo(() => {
+    const groups = new Map<string, BiometricAttendance[]>()
+    for (const a of filteredAttendance) {
+      const key = a.crm_id ?? a.user_id
+      const existing = groups.get(key)
+      if (existing) existing.push(a)
+      else groups.set(key, [a])
+    }
+    return Array.from(groups.values()).sort(
+      (a, b) => new Date(b[0].timestamp).getTime() - new Date(a[0].timestamp).getTime()
+    )
+  }, [filteredAttendance])
+
+  function toggleGroup(key: string) {
+    setExpandedGroups(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
 
   const isToday = attendanceDate === todayStr()
 
@@ -295,7 +325,7 @@ export default function BiometricPage() {
                 {isToday ? "Today's Attendance" : `Attendance — ${new Date(attendanceDate).toLocaleDateString('en-GB')}`}
               </span>
             </div>
-            {filteredAttendance.length === 0 ? (
+            {attendanceGroups.length === 0 ? (
               <div className="flex flex-col items-center py-12">
                 <Fingerprint className="w-8 h-8 text-muted-foreground/40 mb-2" />
                 <p className="text-muted-foreground text-sm">No punches match this filter</p>
@@ -304,39 +334,68 @@ export default function BiometricPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border">
-                    {['Member', 'Time', 'Type', 'Membership'].map(h => (
+                    {['Member', 'Latest', 'Type', 'Membership'].map(h => (
                       <th key={h} className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredAttendance.map((a, i) => (
-                    <tr key={`${a.user_id}-${a.timestamp}-${i}`} className="border-b border-border last:border-0">
-                      <td className="px-4 py-2.5 font-medium text-foreground">
-                        {a.crm_id ? (
-                          <Link href={`/members/${a.crm_id}`} className="hover:text-primary hover:underline transition-colors">
-                            {a.user_name ?? a.user_id}
-                          </Link>
-                        ) : (a.user_name ?? a.user_id)}
-                      </td>
-                      <td className="px-4 py-2.5 text-muted-foreground font-mono text-xs">{formatDateTime(a.timestamp)}</td>
-                      <td className="px-4 py-2.5">
-                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                          {a.punch === 0 ? <LogIn className="w-3.5 h-3.5 text-emerald-400" /> : <LogOut className="w-3.5 h-3.5 text-blue-400" />}
-                          {a.punch === 0 ? 'Check In' : 'Check Out'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2.5">
-                        <span className={`inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full border ${
-                          a.membership_status === 'active' ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' :
-                          a.membership_status === 'expired' ? 'text-red-400 bg-red-500/10 border-red-500/20' :
-                          'text-muted-foreground bg-muted/30 border-border'
-                        }`}>
-                          {a.membership_status === 'active' ? 'Active' : a.membership_status === 'expired' ? 'Expired' : 'No membership'}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
+                  {attendanceGroups.map(group => {
+                    const latest = group[0]
+                    const key = latest.crm_id ?? latest.user_id
+                    const expanded = expandedGroups.has(key)
+                    return (
+                      <Fragment key={key}>
+                        <tr
+                          onClick={() => group.length > 1 && toggleGroup(key)}
+                          className={`border-b border-border last:border-0 ${group.length > 1 ? 'cursor-pointer hover:bg-white/[0.02]' : ''}`}
+                        >
+                          <td className="px-4 py-2.5 font-medium text-foreground">
+                            <div className="flex items-center gap-2">
+                              {group.length > 1 && (expanded ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground shrink-0" /> : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />)}
+                              {latest.crm_id ? (
+                                <Link href={`/members/${latest.crm_id}`} onClick={e => e.stopPropagation()} className="hover:text-primary hover:underline transition-colors">
+                                  {latest.user_name ?? latest.user_id}
+                                </Link>
+                              ) : (latest.user_name ?? latest.user_id)}
+                              {group.length > 1 && (
+                                <span className="text-xs text-muted-foreground bg-muted/50 rounded-full px-2 py-0.5">{group.length}</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-4 py-2.5 text-muted-foreground font-mono text-xs">{formatDateTime(latest.timestamp)}</td>
+                          <td className="px-4 py-2.5">
+                            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                              {latest.punch === 0 ? <LogIn className="w-3.5 h-3.5 text-emerald-400" /> : <LogOut className="w-3.5 h-3.5 text-blue-400" />}
+                              {latest.punch === 0 ? 'Check In' : 'Check Out'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5">
+                            <span className={`inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full border ${
+                              latest.membership_status === 'active' ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' :
+                              latest.membership_status === 'expired' ? 'text-red-400 bg-red-500/10 border-red-500/20' :
+                              'text-muted-foreground bg-muted/30 border-border'
+                            }`}>
+                              {latest.membership_status === 'active' ? 'Active' : latest.membership_status === 'expired' ? 'Expired' : 'No membership'}
+                            </span>
+                          </td>
+                        </tr>
+                        {expanded && group.slice(1).map((a, i) => (
+                          <tr key={`${key}-${i}`} className="border-b border-border last:border-0 bg-muted/10">
+                            <td className="px-4 py-2 pl-10 text-muted-foreground text-xs">↳ same member</td>
+                            <td className="px-4 py-2 text-muted-foreground font-mono text-xs">{formatDateTime(a.timestamp)}</td>
+                            <td className="px-4 py-2">
+                              <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                                {a.punch === 0 ? <LogIn className="w-3.5 h-3.5 text-emerald-400" /> : <LogOut className="w-3.5 h-3.5 text-blue-400" />}
+                                {a.punch === 0 ? 'Check In' : 'Check Out'}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2" />
+                          </tr>
+                        ))}
+                      </Fragment>
+                    )
+                  })}
                 </tbody>
               </table>
             )}
