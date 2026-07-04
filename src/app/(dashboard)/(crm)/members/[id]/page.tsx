@@ -232,18 +232,18 @@ export default async function MemberDetailPage({
 
             {biometric.enrolled ? (
               <Badge className="border text-xs text-green-400 bg-green-500/10 border-green-500/20 inline-flex items-center gap-1">
-                <ShieldCheck className="w-3 h-3" /> Fingerprint Enrolled
+                <ShieldCheck className="w-3 h-3" /> Pushed to Machine
               </Badge>
             ) : (
               <Badge className="border text-xs text-muted-foreground bg-slate-500/10 border-slate-500/20 inline-flex items-center gap-1">
-                <ShieldOff className="w-3 h-3" /> Not Enrolled
+                <ShieldOff className="w-3 h-3" /> Not Pushed to Machine
               </Badge>
             )}
 
             <p className="text-xs text-muted-foreground">
               {biometric.enrolled
                 ? `${biometric.checkIns.length} check-in record${biometric.checkIns.length !== 1 ? 's' : ''} on device`
-                : 'No fingerprint on file. Push this member to the device from the Biometric page.'}
+                : 'Not yet pushed to the machine. Push this member from the Biometric page, then have them scan their finger at the device.'}
             </p>
 
             <Link
@@ -440,7 +440,7 @@ export default async function MemberDetailPage({
               <div className="flex flex-col items-center justify-center py-10 text-center px-6">
                 <Fingerprint className="w-10 h-10 text-muted-foreground/60 mb-3" />
                 <p className="text-muted-foreground text-sm font-medium">
-                  {biometric.enrolled ? 'No check-ins recorded yet' : 'Not enrolled on the device'}
+                  {biometric.enrolled ? 'No check-ins recorded yet' : 'Not pushed to the machine yet'}
                 </p>
                 <p className="text-muted-foreground/50 text-xs mt-1">
                   Fingerprint punches will appear here once the member scans in.

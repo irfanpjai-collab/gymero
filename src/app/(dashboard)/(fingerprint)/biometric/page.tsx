@@ -171,7 +171,8 @@ export default function BiometricPage() {
     setSyncing(true)
     const res = await bulkEnrollAllMembers()
     if (res.error) toast.error(res.error)
-    else toast.success(`${res.queued} members queued — device will pick them up on next check-in`)
+    else if (res.queued === 0) toast.success(`Everyone's already enrolled or in progress — nothing new to queue`)
+    else toast.success(`${res.queued} member${res.queued !== 1 ? 's' : ''} queued${res.skipped ? ` (${res.skipped} already enrolled/in progress, skipped)` : ''} — device will pick them up on next check-in`)
     setSyncing(false)
     loadAll()
   }

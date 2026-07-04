@@ -69,7 +69,7 @@ export async function queueEnroll(memberId: number, fullName: string) {
   return queueCommand('enroll', memberId, fullName)
 }
 
-export async function bulkEnrollAllMembers(): Promise<{ queued: number; error?: string }> {
+export async function bulkEnrollAllMembers(): Promise<{ queued: number; skipped: number; error?: string }> {
   try {
     const profile = await requireRole(['admin', 'receptionist'])
     const supabase = await createClient()
@@ -81,10 +81,42 @@ export async function bulkEnrollAllMembers(): Promise<{ queued: number; error?: 
       .order('member_id', { ascending: true })
 
     if (error) throw error
-    if (!members || members.length === 0) return { queued: 0 }
+    if (!members || members.length === 0) return { queued: 0, skipped: 0 }
+
+    // Skip anyone already enrolled (ever punched in, or their latest completed
+    // enroll/remove command was an enroll) or already sitting in the queue
+    // (pending/sent enroll not yet resolved) — otherwise re-running this
+    // queues a full duplicate batch on top of whatever's already there.
+    const [{ data: punches }, { data: doneCommands }, { data: inFlight }] = await Promise.all([
+      supabase.from('attendance_logs').select('device_user_id'),
+      supabase
+        .from('adms_commands')
+        .select('member_id, operation, created_at')
+        .eq('status', 'done')
+        .in('operation', ['enroll', 'remove'])
+        .order('created_at', { ascending: true }),
+      supabase.from('adms_commands').select('member_id').eq('operation', 'enroll').in('status', ['pending', 'sent']),
+    ])
+
+    const everPunched = new Set(
+      (punches ?? []).map(a => Number(a.device_user_id)).filter(n => !Number.isNaN(n))
+    )
+    const latestEnrollRemove: Record<number, 'enroll' | 'remove'> = {}
+    for (const cmd of doneCommands ?? []) {
+      latestEnrollRemove[cmd.member_id] = cmd.operation
+    }
+    const alreadyQueued = new Set((inFlight ?? []).map(c => c.member_id))
+
+    const toEnroll = members.filter(m =>
+      !alreadyQueued.has(m.member_id) &&
+      !everPunched.has(m.member_id) &&
+      latestEnrollRemove[m.member_id] !== 'enroll'
+    )
+
+    if (toEnroll.length === 0) return { queued: 0, skipped: members.length }
 
     const { error: insertError } = await supabase.from('adms_commands').insert(
-      members.map(m => ({
+      toEnroll.map(m => ({
         operation: 'enroll' as const,
         member_id: m.member_id,
         full_name: m.full_name,
@@ -94,10 +126,10 @@ export async function bulkEnrollAllMembers(): Promise<{ queued: number; error?: 
     if (insertError) throw insertError
 
     revalidatePath('/biometric')
-    return { queued: members.length }
+    return { queued: toEnroll.length, skipped: members.length - toEnroll.length }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
-    return { queued: 0, error: message }
+    return { queued: 0, skipped: 0, error: message }
   }
 }
 
