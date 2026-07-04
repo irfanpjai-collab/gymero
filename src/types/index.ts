@@ -54,10 +54,11 @@ export interface Payment {
   id: string
   member_id: string
   membership_id?: string
+  pt_membership_id?: string
   amount: number
   payment_method: PaymentMethod
   payment_date: string
-  payment_type?: 'membership' | 'admission'
+  payment_type?: 'membership' | 'admission' | 'personal_training'
   notes?: string
   receipt_number?: string
   created_at: string
@@ -74,6 +75,33 @@ export interface Coach {
   specialization?: string
   is_active: boolean
   created_at: string
+}
+
+// ── Personal Training (independent of the regular membership/plan system —
+// see supabase/pt_feature.sql for why) ──────────────────────────────────────
+
+export interface PtPlan {
+  id: string
+  name: string
+  duration_months: number
+  fee: number
+  description?: string
+  is_active: boolean
+}
+
+export interface PtMembership {
+  id: string
+  member_id: string
+  coach_id: string | null
+  plan_id: string
+  start_date: string
+  expiry_date: string
+  amount: number
+  amount_note?: string | null
+  status: 'active' | 'expired' | 'cancelled'
+  created_at: string
+  member?: Member
+  plan?: PtPlan
 }
 
 
