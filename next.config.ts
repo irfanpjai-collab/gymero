@@ -24,6 +24,13 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  async rewrites() {
+    return [
+      { source: '/iclock/cdata',      destination: '/api/adms/cdata' },
+      { source: '/iclock/getrequest', destination: '/api/adms/getrequest' },
+      { source: '/iclock/devicecmd',  destination: '/api/adms/devicecmd' },
+    ]
+  },
   async headers() {
     return [
       {

@@ -26,6 +26,7 @@ import {
   queueRemove,
   queueBlock,
   queueUnblock,
+  bulkEnrollAllMembers,
   type AdmsDevice,
   type AdmsCommand,
   type MemberAdmsStatus,
@@ -97,6 +98,7 @@ export default function BiometricPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [busyMemberId, setBusyMemberId] = useState<number | null>(null)
+  const [syncing, setSyncing] = useState(false)
   const [attendanceDate, setAttendanceDate] = useState(todayStr())
   const [membershipFilter, setMembershipFilter] = useState<'all' | 'active' | 'expired' | 'none'>('all')
 
@@ -162,6 +164,15 @@ export default function BiometricPage() {
     if (res.error) toast.error(res.error)
     else toast.success(`Queued — will apply next time the device checks in`)
     setBusyMemberId(null)
+    loadAll()
+  }
+
+  async function handleBulkSync() {
+    setSyncing(true)
+    const res = await bulkEnrollAllMembers()
+    if (res.error) toast.error(res.error)
+    else toast.success(`${res.queued} members queued — device will pick them up on next check-in`)
+    setSyncing(false)
     loadAll()
   }
 
@@ -321,14 +332,24 @@ export default function BiometricPage() {
 
       {tab === 'members' && (
         <div className="space-y-3">
-          <div className="relative max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/70" />
-            <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Search members…"
-              className="w-full pl-9 px-3 py-2 bg-card border border-border rounded-xl text-sm text-foreground"
-            />
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="relative flex-1 min-w-[200px] max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/70" />
+              <input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search members…"
+                className="w-full pl-9 px-3 py-2 bg-card border border-border rounded-xl text-sm text-foreground"
+              />
+            </div>
+            <button
+              onClick={handleBulkSync}
+              disabled={syncing}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 disabled:opacity-60 text-white rounded-xl text-sm font-medium transition-colors"
+            >
+              {syncing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserPlus className="w-3.5 h-3.5" />}
+              {syncing ? 'Syncing…' : 'Sync All to Device'}
+            </button>
           </div>
           <div className="bg-card rounded-2xl border border-border overflow-hidden">
             <table className="w-full text-sm">

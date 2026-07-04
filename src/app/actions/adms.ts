@@ -69,6 +69,38 @@ export async function queueEnroll(memberId: number, fullName: string) {
   return queueCommand('enroll', memberId, fullName)
 }
 
+export async function bulkEnrollAllMembers(): Promise<{ queued: number; error?: string }> {
+  try {
+    const profile = await requireRole(['admin', 'receptionist'])
+    const supabase = await createClient()
+
+    const { data: members, error } = await supabase
+      .from('members')
+      .select('member_id, full_name')
+      .is('deleted_at', null)
+      .order('member_id', { ascending: true })
+
+    if (error) throw error
+    if (!members || members.length === 0) return { queued: 0 }
+
+    const { error: insertError } = await supabase.from('adms_commands').insert(
+      members.map(m => ({
+        operation: 'enroll' as const,
+        member_id: m.member_id,
+        full_name: m.full_name,
+        requested_by: profile.user_id,
+      }))
+    )
+    if (insertError) throw insertError
+
+    revalidatePath('/biometric')
+    return { queued: members.length }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return { queued: 0, error: message }
+  }
+}
+
 export async function queueRemove(memberId: number) {
   return queueCommand('remove', memberId)
 }
