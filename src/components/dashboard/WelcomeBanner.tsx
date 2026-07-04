@@ -42,7 +42,7 @@ const MOTIVATIONAL_QUOTES = [
   "Discipline beats motivation every single time. 👑"
 ]
 
-export default function WelcomeBanner({ members }: { members: Member[] }) {
+export default function WelcomeBanner({ members, gracePeriodDays }: { members: Member[]; gracePeriodDays: number }) {
   const [time, setTime] = useState('')
   const [greeting, setGreeting] = useState('')
   const [quote, setQuote] = useState('')
@@ -118,7 +118,7 @@ export default function WelcomeBanner({ members }: { members: Member[] }) {
     if (expiry < today) {
       const diffTime = Math.abs(today.getTime() - expiry.getTime())
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
-      if (diffDays <= 180) {
+      if (diffDays <= gracePeriodDays) {
         return { label: 'Grace Period', style: 'bg-orange-500/10 text-orange-400 border border-orange-500/20' }
       }
       return { label: 'Expired', style: 'bg-red-500/10 text-red-400 border border-red-500/20' }

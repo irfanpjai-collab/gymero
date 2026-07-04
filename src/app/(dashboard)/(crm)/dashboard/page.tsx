@@ -18,6 +18,7 @@ import {
   getCachedExpiringMembers,
   getCachedMembers,
   getCachedExpiredCheckIns,
+  getCachedGracePeriodDays,
 } from '@/lib/cached-queries'
 import WelcomeBanner from '@/components/dashboard/WelcomeBanner'
 import { formatDate, formatDateTime, formatCurrency } from '@/lib/utils'
@@ -57,12 +58,13 @@ function StatCard({
 }
 
 export default async function DashboardPage() {
-  const [stats, gracePeriodMembers, expiringMembers, allMembers, expiredCheckIns] = await Promise.all([
+  const [stats, gracePeriodMembers, expiringMembers, allMembers, expiredCheckIns, gracePeriodDays] = await Promise.all([
     getCachedDashboardStats(),
     getCachedGracePeriodMembers(8),
     getCachedExpiringMembers(7),
     getCachedMembers(),
     getCachedExpiredCheckIns(8),
+    getCachedGracePeriodDays(),
   ])
 
   const today = new Date()
@@ -134,7 +136,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* Interactive Welcome Banner */}
-      <WelcomeBanner members={allMembers} />
+      <WelcomeBanner members={allMembers} gracePeriodDays={gracePeriodDays} />
 
       {/* Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4 stagger-children">
@@ -240,7 +242,7 @@ export default async function DashboardPage() {
               </div>
               <div>
                 <h2 className="font-semibold text-foreground text-sm">Grace Period</h2>
-                <p className="text-muted-foreground text-[11px]">Expired within 180 days</p>
+                <p className="text-muted-foreground text-[11px]">Expired within {gracePeriodDays} days</p>
               </div>
               {gracePeriodMembers.length > 0 && (
                 <span className="text-xs bg-orange-500/10 text-orange-400 border border-orange-500/20 rounded-full px-2 py-0.5 font-medium">
@@ -262,12 +264,12 @@ export default async function DashboardPage() {
                 <Timer className="w-6 h-6 text-muted-foreground" />
               </div>
               <p className="text-muted-foreground text-sm font-medium">No grace period members</p>
-              <p className="text-muted-foreground/60 text-xs mt-1">Members expired within 180 days will appear here.</p>
+              <p className="text-muted-foreground/60 text-xs mt-1">Members expired within {gracePeriodDays} days will appear here.</p>
             </div>
           ) : (
             <div className="divide-y divide-border">
               {gracePeriodMembers.map((member) => {
-                const graceDaysLeft = 180 - member.days_since_expiry
+                const graceDaysLeft = gracePeriodDays - member.days_since_expiry
                 const urgency = graceDaysLeft <= 30
                   ? 'text-red-400'
                   : graceDaysLeft <= 90
