@@ -13,8 +13,10 @@ import {
   ChevronUp,
   Dumbbell,
   Settings2,
+  Pencil,
+  Trash2,
 } from 'lucide-react'
-import { getCoaches, createCoach } from '@/app/actions/coaches'
+import { getCoaches, createCoach, updateCoach } from '@/app/actions/coaches'
 import { getPtPlans, createPtPlan, getCoachPtClients, type PtClient } from '@/app/actions/pt'
 import { Badge } from '@/components/ui/badge'
 import { formatDate } from '@/lib/utils'
@@ -109,6 +111,64 @@ function AddCoachDialog({ open, onClose, onSuccess }: { open: boolean; onClose: 
   )
 }
 
+// ─── Edit Coach ───────────────────────────────────────────────────────────────
+
+function EditCoachDialog({ open, onClose, onSuccess, coach }: { open: boolean; onClose: () => void; onSuccess: () => void; coach: Coach }) {
+  const [isPending, startTransition] = useTransition()
+  const [name, setName] = useState(coach.name)
+  const [mobile, setMobile] = useState(coach.mobile)
+  const [email, setEmail] = useState(coach.email ?? '')
+  const [specialization, setSpecialization] = useState(coach.specialization ?? '')
+  const [error, setError] = useState('')
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    setError('')
+    const formData = new FormData()
+    formData.set('name', name)
+    formData.set('mobile', mobile)
+    formData.set('email', email)
+    formData.set('specialization', specialization)
+    startTransition(async () => {
+      const result = await updateCoach(coach.id, formData)
+      if (result.error) { setError(result.error); return }
+      onSuccess(); onClose()
+    })
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Edit Coach">
+      {error && <p className="text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2 mb-4">{error}</p>}
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Field label="Name" required>
+          <input type="text" value={name} onChange={(e) => setName(e.target.value)} className={inputCls} required />
+        </Field>
+        <Field label="Mobile" required>
+          <div className="relative">
+            <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/40 pointer-events-none" />
+            <input type="tel" value={mobile} onChange={(e) => setMobile(e.target.value)} className={`${inputCls} pl-9`} required />
+          </div>
+        </Field>
+        <Field label="Email">
+          <div className="relative">
+            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/40 pointer-events-none" />
+            <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={`${inputCls} pl-9`} />
+          </div>
+        </Field>
+        <Field label="Specialization">
+          <input type="text" value={specialization} onChange={(e) => setSpecialization(e.target.value)} className={inputCls} />
+        </Field>
+        <div className="flex gap-3 pt-1">
+          <button type="button" onClick={onClose} className="flex-1 px-4 py-2.5 border border-border hover:border-border-bright text-muted-foreground hover:text-foreground rounded-xl text-sm transition-colors">Cancel</button>
+          <button type="submit" disabled={isPending} className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-primary hover:bg-primary/90 disabled:opacity-60 text-white rounded-xl text-sm font-semibold transition-colors">
+            {isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Saving…</> : 'Save Changes'}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
 // ─── PT plan management ───────────────────────────────────────────────────────
 
 function AddPtPlanDialog({ open, onClose, onSuccess, plans }: { open: boolean; onClose: () => void; onSuccess: () => void; plans: PtPlan[] }) {
@@ -193,10 +253,12 @@ function PtStatusBadge({ status }: { status: PtClient['status'] }) {
   return <Badge variant="secondary" className="text-xs">Cancelled</Badge>
 }
 
-function CoachCard({ coach }: { coach: Coach }) {
+function CoachCard({ coach, onChanged }: { coach: Coach; onChanged: () => void }) {
   const [ptOpen, setPtOpen] = useState(false)
   const [ptClients, setPtClients] = useState<PtClient[]>([])
   const [ptLoading, setPtLoading] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
+  const [isDeleting, startDeleteTransition] = useTransition()
 
   async function loadPtClients() {
     setPtLoading(true)
@@ -210,8 +272,20 @@ function CoachCard({ coach }: { coach: Coach }) {
     setPtOpen((v) => !v)
   }
 
+  function handleDelete() {
+    if (!confirm(`Remove coach "${coach.name}"? Their PT/salary history is kept, but they'll no longer appear here or be assignable.`)) return
+    startDeleteTransition(async () => {
+      const formData = new FormData()
+      formData.set('is_active', 'false')
+      await updateCoach(coach.id, formData)
+      onChanged()
+    })
+  }
+
   return (
     <div className="bg-card rounded-2xl border border-border p-5 shadow-card card-hover">
+      <EditCoachDialog open={editOpen} onClose={() => setEditOpen(false)} onSuccess={onChanged} coach={coach} />
+
       <div className="flex items-start gap-4">
         <CoachAvatar name={coach.name} />
         <div className="flex-1 min-w-0">
@@ -238,6 +312,23 @@ function CoachCard({ coach }: { coach: Coach }) {
               </div>
             )}
           </div>
+        </div>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <button
+            onClick={() => setEditOpen(true)}
+            title="Edit coach"
+            className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={handleDelete}
+            disabled={isDeleting}
+            title="Delete coach"
+            className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
+          >
+            {isDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+          </button>
         </div>
       </div>
 
@@ -356,7 +447,7 @@ export default function CoachesClient({ initialCoaches, ptPlans: initialPtPlans 
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {coaches.map((coach) => (
-            <CoachCard key={coach.id} coach={coach} />
+            <CoachCard key={coach.id} coach={coach} onChanged={load} />
           ))}
         </div>
       )}
