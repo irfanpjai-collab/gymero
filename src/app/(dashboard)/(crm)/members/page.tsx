@@ -14,6 +14,7 @@ import {
 import { getCachedMembers, getCachedLastCheckIns } from '@/lib/cached-queries'
 import { formatDate, formatDateTime, getMembershipStatus, getStatusColor } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
+import SyncFormIntakeButton from './sync-form-intake-button'
 import type { Member } from '@/types'
 
 const PAGE_SIZE = 20
@@ -321,6 +322,7 @@ export default async function MembersPage({ searchParams }: { searchParams: Sear
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <SyncFormIntakeButton />
           <Link
             href="/members/import"
             className="inline-flex items-center gap-2 px-4 py-2 text-sm border border-border hover:border-border-bright text-muted-foreground hover:text-foreground rounded-xl transition-colors"
