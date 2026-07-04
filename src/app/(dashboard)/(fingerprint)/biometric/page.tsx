@@ -106,6 +106,7 @@ function todayStr() {
 export default function BiometricPage() {
   const [tab, setTab] = useState<'attendance' | 'members' | 'queue'>('attendance')
   const [devices, setDevices] = useState<AdmsDevice[]>([])
+  const [deviceOnline, setDeviceOnline] = useState(false)
   const [attendance, setAttendance] = useState<BiometricAttendance[]>([])
   const [members, setMembers] = useState<MemberLite[]>([])
   const [commands, setCommands] = useState<AdmsCommand[]>([])
@@ -123,6 +124,11 @@ export default function BiometricPage() {
   // One combined server action instead of five separate ones — each call is
   // its own client→server round trip, which used to dominate load time even
   // though the underlying queries are individually fast.
+  //
+  // deviceOnline is computed here (once per fetch) rather than at render
+  // time — calling Date.now() directly in the render body is an impure read
+  // that can silently go stale between renders with no state change to
+  // explain it.
   const fetchData = useCallback(async () => {
     const data = await getBiometricPageData(attendanceDate)
     setDevices(data.devices)
@@ -130,6 +136,10 @@ export default function BiometricPage() {
     setMembers(data.members)
     setCommands(data.commands)
     setAdmsStatus(data.admsStatus)
+    setDeviceOnline(data.devices.some(d => {
+      if (!d.last_seen) return false
+      return Date.now() - new Date(d.last_seen).getTime() < 5 * 60 * 1000
+    }))
   }, [attendanceDate])
 
   const loadAll = useCallback(async () => {
@@ -138,7 +148,13 @@ export default function BiometricPage() {
     setLoading(false)
   }, [fetchData])
 
-  useEffect(() => { loadAll() }, [loadAll])
+  // Deferred a tick so the initial setLoading(true) inside loadAll doesn't
+  // run synchronously within the effect's own call frame — this is a mount
+  // (+ attendanceDate change) triggered fetch, not a direct state sync.
+  useEffect(() => {
+    const timer = setTimeout(() => { loadAll() }, 0)
+    return () => clearTimeout(timer)
+  }, [loadAll])
 
   // Live updates — without this, the page only ever showed what was loaded on
   // mount; a new punch or a command flipping from "pending" to "done" needed a
@@ -160,11 +176,6 @@ export default function BiometricPage() {
       unsubscribeAttendance()
     }
   }, [fetchData])
-
-  const deviceOnline = devices.some(d => {
-    if (!d.last_seen) return false
-    return Date.now() - new Date(d.last_seen).getTime() < 5 * 60 * 1000
-  })
 
   async function handleAction(
     action: 'enroll' | 'remove' | 'block' | 'unblock',
@@ -249,7 +260,7 @@ export default function BiometricPage() {
           <div>
             <h1 className="text-xl font-bold text-foreground">Biometric (ADMS)</h1>
             <p className="text-muted-foreground text-xs mt-0.5">
-              Device-push integration — commands apply on the device's next check-in, not instantly.
+              Device-push integration — commands apply on the device&apos;s next check-in, not instantly.
             </p>
           </div>
         </div>
