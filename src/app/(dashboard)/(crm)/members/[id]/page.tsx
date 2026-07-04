@@ -401,11 +401,17 @@ export default async function MemberDetailPage({
                         </td>
                         <td className="px-4 py-3.5">
                           <Badge className={`border text-xs ${
-                            payment.payment_type === 'admission' 
-                              ? 'text-blue-400 bg-blue-500/10 border-blue-500/20' 
+                            payment.payment_type === 'admission'
+                              ? 'text-blue-400 bg-blue-500/10 border-blue-500/20'
+                              : payment.payment_type === 'personal_training'
+                              ? 'text-purple-400 bg-purple-500/10 border-purple-500/20'
                               : 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
                           }`}>
-                            {payment.payment_type === 'admission' ? 'Admission' : 'Membership'}
+                            {payment.payment_type === 'admission'
+                              ? 'Admission'
+                              : payment.payment_type === 'personal_training'
+                              ? 'Personal Training'
+                              : 'Membership'}
                           </Badge>
                         </td>
                         <td className="px-4 py-3.5">

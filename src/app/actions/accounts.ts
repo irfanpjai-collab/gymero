@@ -176,7 +176,11 @@ export async function getAccountsOverview(month?: string): Promise<AccountsOverv
         id: `payment-${p.id}`,
         date: p.payment_date,
         type: 'revenue' as const,
-        label: `${p.payment_type === 'admission' ? 'Admission fee' : 'Membership payment'} — ${member?.full_name ?? 'Unknown member'}`,
+        label: `${
+          p.payment_type === 'admission' ? 'Admission fee'
+          : p.payment_type === 'personal_training' ? 'PT payment'
+          : 'Membership payment'
+        } — ${member?.full_name ?? 'Unknown member'}`,
         amount: p.amount,
         method: p.payment_method,
         status: 'paid' as const,
