@@ -24,13 +24,13 @@ function buildCommandString(cmd: PendingCommand): string {
 
   switch (cmd.operation) {
     case 'enroll':
-      return `DATA UPDATE USERINFO PIN=${pin}\tName=${name}\tPri=0\tPasswd=\tCard=\tGrp=1\tTZ=1`
+      return `USER ADD PIN=${pin}\tName=${name}\tPri=0\tPasswd=\tCard=\tGrp=1\tTZ=1`
     case 'block':
-      return `DATA UPDATE USERINFO PIN=${pin}\tName=${name}\tPri=0\tPasswd=\tCard=\tGrp=0\tTZ=0`
+      return `USER ADD PIN=${pin}\tName=${name}\tPri=0\tPasswd=\tCard=\tGrp=0\tTZ=0`
     case 'unblock':
-      return `DATA UPDATE USERINFO PIN=${pin}\tName=${name}\tPri=0\tPasswd=\tCard=\tGrp=1\tTZ=1`
+      return `USER ADD PIN=${pin}\tName=${name}\tPri=0\tPasswd=\tCard=\tGrp=1\tTZ=1`
     case 'remove':
-      return `DATA DELETE USERINFO PIN=${pin}`
+      return `USER DEL PIN=${pin}`
   }
 }
 
