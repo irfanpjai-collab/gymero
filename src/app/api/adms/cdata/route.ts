@@ -50,18 +50,13 @@ export async function POST(req: NextRequest) {
   const table = req.nextUrl.searchParams.get('table') ?? ''
   const body = await req.text()
 
+  if (!sn) return textResponse('ERROR', 400)
+
   const supabase = createAdminClient()
 
-  // The protocol's only identity signal is SN — reject anything not already
-  // registered via a prior handshake, rather than trusting it blindly.
-  const { data: device, error: deviceError } = await supabase
-    .from('adms_devices')
-    .select('serial_number')
-    .eq('serial_number', sn)
-    .maybeSingle()
-  if (deviceError) console.error('adms cdata: device lookup failed —', deviceError.message)
-  if (!device) return textResponse('ERROR', 403)
-
+  // This firmware pushes attendance data straight over POST without ever doing
+  // a prior GET ...&options=all handshake, so registration has to happen here
+  // too — SN is the only identity signal in this protocol either way.
   await upsertDevice(sn)
 
   if (table === 'ATTLOG') {
