@@ -26,9 +26,14 @@ const nextConfig: NextConfig = {
   },
   async rewrites() {
     return [
-      { source: '/iclock/cdata',      destination: '/api/adms/cdata' },
-      { source: '/iclock/getrequest', destination: '/api/adms/getrequest' },
-      { source: '/iclock/devicecmd',  destination: '/api/adms/devicecmd' },
+      // Some firmware (IIS/ASP.NET-era ADMS heritage) requests the .aspx-suffixed
+      // paths instead of the plain ones — accept both.
+      { source: '/iclock/cdata',           destination: '/api/adms/cdata' },
+      { source: '/iclock/cdata.aspx',      destination: '/api/adms/cdata' },
+      { source: '/iclock/getrequest',      destination: '/api/adms/getrequest' },
+      { source: '/iclock/getrequest.aspx', destination: '/api/adms/getrequest' },
+      { source: '/iclock/devicecmd',       destination: '/api/adms/devicecmd' },
+      { source: '/iclock/devicecmd.aspx',  destination: '/api/adms/devicecmd' },
     ]
   },
   async headers() {
