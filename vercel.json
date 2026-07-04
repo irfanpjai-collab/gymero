@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/cron/sync-form-intake",
-      "schedule": "*/5 * * * *"
+      "schedule": "0 4 * * *"
     }
   ]
 }
