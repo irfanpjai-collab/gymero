@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef, useTransition } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Receipt,
   Plus,
@@ -115,7 +116,7 @@ function AddExpenseDialog({
 
   if (!open) return null
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-full max-w-md bg-card border border-border rounded-2xl shadow-elevated p-6 max-h-[90vh] overflow-y-auto">
@@ -164,7 +165,8 @@ function AddExpenseDialog({
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 
