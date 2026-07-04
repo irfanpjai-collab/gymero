@@ -104,13 +104,6 @@ export async function POST(req: NextRequest) {
     return textResponse(`OK: ${processed}`)
   }
 
-  // TEMPORARY MANUAL TRIAL — logging whatever non-ATTLOG table this device
-  // pushes (expected OPERLOG) to see the real field format for a fingerprint
-  // enrollment upload. Remove once captured.
-  if (sn === 'NFZ8260503127') {
-    console.error(`[TRIAL] cdata POST table="${table}" body="${body}"`)
-  }
-
   // OPERLOG (user/fingerprint/face uploads) — not consumed for now; just
   // acknowledge so the device doesn't keep retrying.
   return textResponse('OK')
