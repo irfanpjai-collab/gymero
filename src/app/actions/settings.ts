@@ -34,10 +34,15 @@ export async function updateGracePeriodDays(days: number): Promise<{ error?: str
     const profile = await requireRole(['admin'])
     if (!Number.isFinite(days) || days < 0) throw new Error('Grace period must be a non-negative number')
 
+    // A plain update, not upsert — the singleton row (id=1) is guaranteed to
+    // already exist (seeded by app_settings.sql). Upsert would also require
+    // an INSERT policy to satisfy RLS on its ON CONFLICT path even though the
+    // row already exists and it'd always take the update branch anyway.
     const supabase = await createClient()
     const { error } = await supabase
       .from('app_settings')
-      .upsert({ id: 1, grace_period_days: Math.round(days), updated_at: new Date().toISOString(), updated_by: profile.user_id })
+      .update({ grace_period_days: Math.round(days), updated_at: new Date().toISOString(), updated_by: profile.user_id })
+      .eq('id', 1)
     if (error) throw error
 
     revalidateTag('settings', {})
