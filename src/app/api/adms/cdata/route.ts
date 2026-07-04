@@ -27,20 +27,16 @@ export async function GET(req: NextRequest) {
   await upsertDevice(sn)
 
   if (isHandshake) {
-    // Commonly-documented ADMS handshake response shape — not verified against
-    // this exact firmware yet. Expect to adjust once tested against the real
-    // device (see supabase/adms.sql header comment + project notes).
     const body = [
-      `GET OPTION FROM: ${sn}`,
+      `GET OPTION FROM:${sn}`,
       'Stamp=9999',
-      'OpStamp=9999',
-      'ErrorDelay=60',
-      'Delay=30',
-      'TransTimes=00:00;14:05',
-      'TransInterval=1',
-      'TransFlag=111111111111',
-      'Realtime=1',
-      'Encrypt=0',
+      'ATTLOGSTAMP=9999',
+      'OPERLOGSTAMP=0',
+      'ERRORDELAY=30',
+      'DELAY=10',
+      'TRANSIMES=1',
+      'REALTIME=1',
+      'ENCRYPT=None',
     ].join('\n')
     return textResponse(body)
   }
