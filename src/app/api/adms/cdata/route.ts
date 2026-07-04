@@ -104,6 +104,13 @@ export async function POST(req: NextRequest) {
     return textResponse(`OK: ${processed}`)
   }
 
+  // TEMPORARY MANUAL TRIAL — logging OPERLOG payload to inspect the DATA
+  // QUERY FP response in case it arrives here instead of devicecmd. Remove
+  // alongside the getrequest.ts override once verified.
+  if (sn === 'NFZ8260503127') {
+    console.error(`[TRIAL] cdata POST table="${table}" body="${body}"`)
+  }
+
   // OPERLOG (user/fingerprint/face uploads) — not consumed for now; just
   // acknowledge so the device doesn't keep retrying.
   return textResponse('OK')

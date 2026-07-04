@@ -42,13 +42,22 @@ async function ack(sn: string | null, id: string | null, ret: string | null): Pr
 }
 
 export async function POST(req: NextRequest) {
-  const params = new URLSearchParams(await req.text())
+  const rawBody = await req.text()
+  const params = new URLSearchParams(rawBody)
   const sn = req.nextUrl.searchParams.get('SN') ?? params.get('SN')
+  // TEMPORARY MANUAL TRIAL — logging full payload to inspect the DATA QUERY FP
+  // response. Remove alongside the getrequest.ts override once verified.
+  if (sn === 'NFZ8260503127') {
+    console.error(`[TRIAL] devicecmd POST query="${req.nextUrl.search}" body="${rawBody}"`)
+  }
   await ack(sn, params.get('ID') ?? req.nextUrl.searchParams.get('ID'), params.get('Return') ?? req.nextUrl.searchParams.get('Return'))
   return textResponse('OK')
 }
 
 export async function GET(req: NextRequest) {
+  if (req.nextUrl.searchParams.get('SN') === 'NFZ8260503127') {
+    console.error(`[TRIAL] devicecmd GET query="${req.nextUrl.search}"`)
+  }
   await ack(
     req.nextUrl.searchParams.get('SN'),
     req.nextUrl.searchParams.get('ID'),
