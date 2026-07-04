@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import {
   Users,
@@ -38,7 +39,12 @@ function Field({ label, required, children }: { label: string; required?: boolea
 
 function Modal({ open, onClose, title, children }: { open: boolean; onClose: () => void; title: string; children: React.ReactNode }) {
   if (!open) return null
-  return (
+  // Portaled to document.body — rendered inline, this would sit inside a
+  // CoachCard that has a hover :transform (.card-hover), which creates a new
+  // containing block for `fixed` descendants. That trapped the overlay near
+  // the card instead of covering the viewport, and flickered as the card's
+  // hover state toggled under the cursor.
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-full max-w-md bg-card border border-border rounded-2xl shadow-elevated p-6 animate-scale-in max-h-[90vh] overflow-y-auto">
@@ -48,7 +54,8 @@ function Modal({ open, onClose, title, children }: { open: boolean; onClose: () 
         <h2 className="text-lg font-semibold text-foreground mb-5">{title}</h2>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 
