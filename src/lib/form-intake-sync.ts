@@ -26,6 +26,15 @@ function parseSheetDate(raw: string | undefined): string | null {
   return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`
 }
 
+// Only "1" and "3" are real plan durations seen in this form. Anything else
+// (blank, or a stray typo like "43") isn't a plan value — ignored rather than
+// stored as a nonsense note.
+function membershipPlanLabel(month: string | undefined): string | null {
+  if (month === '1') return 'Monthly'
+  if (month === '3') return 'Quarterly'
+  return null
+}
+
 interface ParsedRow {
   memberId: number
   name: string
@@ -136,7 +145,8 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
       else result.updated++
     } else {
       const insertPayload = { ...payload, member_id: memberId } as Record<string, unknown>
-      if (row.membershipMonth) insertPayload.notes = `Requested plan (from intake form): ${row.membershipMonth} month(s)`
+      const planLabel = membershipPlanLabel(row.membershipMonth)
+      if (planLabel) insertPayload.notes = `Requested plan (from intake form): ${planLabel}`
       const { error } = await supabase.from('members').insert(insertPayload)
       if (error) result.errors.push(`Member ID ${memberId}: insert failed — ${error.message}`)
       else result.created++
