@@ -10,11 +10,13 @@ import { getSheetValues } from '@/lib/google-sheets'
 // Place, JOIN DATE, MEMBERSHIP MONTH. Dates are DD/MM/YYYY (day-first, same
 // convention as the rest of this app).
 //
-// Deliberately does NOT create a membership/payment record — the form has no
-// amount/payment-method data, so fabricating one would show a member as paid
-// when they might not be. MEMBERSHIP MONTH is stored in notes, but only on
-// first creation — an update never touches notes, so it can't clobber
-// whatever staff have since written there by hand.
+// On first creation only (never on update, so it can't clobber anything staff
+// have since changed by hand), also creates a real membership for a
+// recognized MEMBERSHIP MONTH value (1=Monthly, 3=Quarterly) — these are
+// treated as already paid in cash outside the system, so payment_pending is
+// false, but deliberately no `payments` row is inserted: revenue/accounts
+// figures should only reflect payments actually recorded through the UI, not
+// an automated import.
 
 const TAB_RANGE = "'Form responses 1'!A2:G"
 
@@ -28,10 +30,10 @@ function parseSheetDate(raw: string | undefined): string | null {
 
 // Only "1" and "3" are real plan durations seen in this form. Anything else
 // (blank, or a stray typo like "43") isn't a plan value — ignored rather than
-// stored as a nonsense note.
-function membershipPlanLabel(month: string | undefined): string | null {
-  if (month === '1') return 'Monthly'
-  if (month === '3') return 'Quarterly'
+// stored as a nonsense note or matched to a real plan.
+function membershipDurationMonths(month: string | undefined): number | null {
+  if (month === '1') return 1
+  if (month === '3') return 3
   return null
 }
 
@@ -111,6 +113,13 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
 
   const supabase = createAdminClient()
 
+  const { data: plans } = await supabase
+    .from('membership_plans')
+    .select('id, duration_months, fee')
+    .eq('is_active', true)
+    .in('duration_months', [1, 3])
+  const planByDuration = new Map((plans ?? []).map(p => [p.duration_months, p]))
+
   for (const [memberId, entries] of byId) {
     const distinctNames = new Set(entries.map(e => e.name.toLowerCase()))
     if (distinctNames.size > 1) {
@@ -143,13 +152,40 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
       const { error } = await supabase.from('members').update(payload).eq('member_id', memberId)
       if (error) result.errors.push(`Member ID ${memberId}: update failed — ${error.message}`)
       else result.updated++
-    } else {
-      const insertPayload = { ...payload, member_id: memberId } as Record<string, unknown>
-      const planLabel = membershipPlanLabel(row.membershipMonth)
-      if (planLabel) insertPayload.notes = `Requested plan (from intake form): ${planLabel}`
-      const { error } = await supabase.from('members').insert(insertPayload)
-      if (error) result.errors.push(`Member ID ${memberId}: insert failed — ${error.message}`)
-      else result.created++
+      continue
+    }
+
+    const insertPayload = { ...payload, member_id: memberId } as Record<string, unknown>
+    const durationMonths = membershipDurationMonths(row.membershipMonth)
+    const plan = durationMonths ? planByDuration.get(durationMonths) : undefined
+    if (durationMonths) {
+      insertPayload.notes = `Requested plan (from intake form): ${durationMonths === 1 ? 'Monthly' : 'Quarterly'}`
+    }
+
+    const { data: inserted, error } = await supabase.from('members').insert(insertPayload).select('id').single()
+    if (error) {
+      result.errors.push(`Member ID ${memberId}: insert failed — ${error.message}`)
+      continue
+    }
+    result.created++
+
+    if (plan && inserted) {
+      const startDate = row.joinDate ?? new Date().toISOString().slice(0, 10)
+      const expiry = new Date(startDate)
+      expiry.setMonth(expiry.getMonth() + plan.duration_months)
+
+      const { error: membershipError } = await supabase.from('memberships').insert({
+        member_id: (inserted as { id: string }).id,
+        plan_id: plan.id,
+        start_date: startDate,
+        expiry_date: expiry.toISOString().slice(0, 10),
+        amount: plan.fee,
+        status: 'active',
+        payment_pending: false, // treated as already paid in cash — no `payments` row, so this stays out of Accounts
+      })
+      if (membershipError) {
+        result.errors.push(`Member ID ${memberId}: membership creation failed — ${membershipError.message}`)
+      }
     }
   }
 
