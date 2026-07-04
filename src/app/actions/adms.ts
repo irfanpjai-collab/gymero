@@ -147,16 +147,26 @@ export async function queueUnblock(memberId: number) {
 
 // Moved over from the removed biometric.ts — identical query. attendance_logs
 // doesn't care whether the pyzk bridge or the ADMS routes wrote to it.
+//
+// "Pushed to device" and "fingerprint enrolled" are two genuinely different
+// facts (see the members/[id] Biometric card): a member can have their
+// PIN/name/access record known to the device (pushed) without ever having
+// scanned a finger there yet, and — less commonly — someone can have a
+// fingerprint enrolled directly at the machine without ever going through
+// our "enroll" push (e.g. a walk-in test enrolled locally by staff). Keeping
+// these as separate booleans instead of one merged "enrolled" flag lets the
+// UI show that distinction instead of hiding it.
 export interface MemberAdmsInfo {
-  enrolled: boolean
+  pushedToDevice: boolean
+  fingerprintEnrolled: boolean
   checkIns: BiometricAttendance[]
 }
 
 // Used by the member detail page. Under ADMS there's no live "ask the device"
-// query like pyzk had — "enrolled" is inferred from history: either they've
-// successfully scanned at least once, or their most recent enroll command
-// completed, and no remove command happened after it.
+// query like pyzk had — both flags are inferred from history/pushes, not a
+// live lookup.
 export async function getMemberAdmsInfo(memberId: string): Promise<MemberAdmsInfo> {
+  const empty: MemberAdmsInfo = { pushedToDevice: false, fingerprintEnrolled: false, checkIns: [] }
   try {
     const supabase = await createClient()
     const { data: member } = await supabase
@@ -165,7 +175,7 @@ export async function getMemberAdmsInfo(memberId: string): Promise<MemberAdmsInf
       .eq('id', memberId)
       .maybeSingle()
 
-    if (!member) return { enrolled: false, checkIns: [] }
+    if (!member) return empty
 
     const { data: logs } = await supabase
       .from('attendance_logs')
@@ -190,10 +200,8 @@ export async function getMemberAdmsInfo(memberId: string): Promise<MemberAdmsInf
       .limit(1)
       .maybeSingle()
 
-    // Strongest signal first: the device itself confirmed a valid fingerprint
-    // template via its OPERLOG push (see cdata/route.ts) — direct proof, not
-    // an inference. Falls back to the older heuristics when that's absent
-    // (e.g. enrolled before this table existed).
+    // Device-confirmed valid fingerprint template via OPERLOG push (see
+    // cdata/route.ts) — direct proof, not an inference.
     const { data: fingerprint } = await supabase
       .from('adms_fingerprints')
       .select('valid')
@@ -202,17 +210,25 @@ export async function getMemberAdmsInfo(memberId: string): Promise<MemberAdmsInf
       .limit(1)
       .maybeSingle()
 
-    const enrolled = !!fingerprint || checkIns.length > 0 || (lastCommand?.operation === 'enroll' && lastCommand.status === 'done')
+    // A successful punch is itself proof the fingerprint works, independent
+    // of whether the OPERLOG event for that enrollment was ever captured
+    // (e.g. enrolled before adms_fingerprints existed).
+    const fingerprintEnrolled = !!fingerprint || checkIns.length > 0
 
-    return { enrolled, checkIns }
+    // "Pushed to device" is purely our own action history — did the CRM tell
+    // the device about this PIN, and was that not later reversed by remove.
+    const pushedToDevice = lastCommand?.operation === 'enroll' && lastCommand.status === 'done'
+
+    return { pushedToDevice, fingerprintEnrolled, checkIns }
   } catch (err) {
     console.error('getMemberAdmsInfo error:', err)
-    return { enrolled: false, checkIns: [] }
+    return empty
   }
 }
 
 export interface MemberAdmsStatus {
-  enrolled: boolean
+  pushedToDevice: boolean
+  fingerprintEnrolled: boolean
   blocked: boolean
 }
 
@@ -318,11 +334,11 @@ export async function getBiometricPageData(dateStr?: string): Promise<BiometricP
       }
     })
 
-    // "Enrolled" is true if the device confirmed a valid fingerprint template
-    // (direct signal via OPERLOG push — see cdata/route.ts), the member has
-    // ever punched in, or their most recent completed enroll/remove command
-    // was an enroll. "Blocked" reflects the most recent completed
-    // block/unblock command; defaults to unblocked if neither ever ran.
+    // Kept as two separate signals rather than one merged "enrolled" flag —
+    // see MemberAdmsInfo for why. "fingerprintEnrolled" is device-confirmed
+    // (OPERLOG push) or proven by a successful punch; "pushedToDevice" is
+    // purely our own push history. "Blocked" reflects the most recent
+    // completed block/unblock command; defaults to unblocked if neither ever ran.
     const hasFingerprint = new Set(
       (fingerprints ?? []).map(f => Number(f.device_user_id)).filter(n => !Number.isNaN(n))
     )
@@ -347,7 +363,8 @@ export async function getBiometricPageData(dateStr?: string): Promise<BiometricP
     const admsStatus: Record<number, MemberAdmsStatus> = {}
     for (const id of statusMemberIds) {
       admsStatus[id] = {
-        enrolled: hasFingerprint.has(id) || everPunched.has(id) || latestEnrollRemove[id] === 'enroll',
+        pushedToDevice: latestEnrollRemove[id] === 'enroll',
+        fingerprintEnrolled: hasFingerprint.has(id) || everPunched.has(id),
         blocked: latestBlockUnblock[id] === 'block',
       }
     }

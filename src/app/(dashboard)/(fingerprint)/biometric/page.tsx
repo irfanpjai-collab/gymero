@@ -11,6 +11,7 @@ import {
   LogOut,
   Loader2,
   UserPlus,
+  UserCheck,
   Trash2,
   Ban,
   CircleCheck,
@@ -60,14 +61,26 @@ function CommandStatusBadge({ status }: { status: AdmsCommand['status'] }) {
   )
 }
 
-function EnrolledBadge({ enrolled }: { enrolled: boolean }) {
+function PushedBadge({ pushed }: { pushed: boolean }) {
+  return pushed ? (
+    <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border text-emerald-400 bg-emerald-500/10 border-emerald-500/20">
+      <UserCheck className="w-3 h-3" /> Pushed
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border text-muted-foreground bg-muted/30 border-border">
+      <UserCheck className="w-3 h-3" /> Not pushed
+    </span>
+  )
+}
+
+function FingerprintBadge({ enrolled }: { enrolled: boolean }) {
   return enrolled ? (
     <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border text-emerald-400 bg-emerald-500/10 border-emerald-500/20">
       <Fingerprint className="w-3 h-3" /> Enrolled
     </span>
   ) : (
     <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border text-muted-foreground bg-muted/30 border-border">
-      <Fingerprint className="w-3 h-3" /> Not enrolled
+      <Fingerprint className="w-3 h-3" /> No fingerprint
     </span>
   )
 }
@@ -356,7 +369,7 @@ export default function BiometricPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border">
-                  {['Member', 'ID', 'Fingerprint', 'Access', ''].map((h, i) => (
+                  {['Member', 'ID', 'Pushed', 'Fingerprint', 'Access', ''].map((h, i) => (
                     <th key={i} className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase">{h}</th>
                   ))}
                 </tr>
@@ -364,12 +377,13 @@ export default function BiometricPage() {
               <tbody>
                 {filteredMembers.map(m => {
                   const busy = busyMemberId === m.member_id
-                  const status = admsStatus[m.member_id] ?? { enrolled: false, blocked: false }
+                  const status = admsStatus[m.member_id] ?? { pushedToDevice: false, fingerprintEnrolled: false, blocked: false }
                   return (
                     <tr key={m.id} className="border-b border-border last:border-0 hover:bg-white/[0.02]">
                       <td className="px-4 py-2.5 font-medium text-foreground">{m.full_name}</td>
                       <td className="px-4 py-2.5 text-muted-foreground font-mono text-xs">#{m.member_id}</td>
-                      <td className="px-4 py-2.5"><EnrolledBadge enrolled={status.enrolled} /></td>
+                      <td className="px-4 py-2.5"><PushedBadge pushed={status.pushedToDevice} /></td>
+                      <td className="px-4 py-2.5"><FingerprintBadge enrolled={status.fingerprintEnrolled} /></td>
                       <td className="px-4 py-2.5"><AccessBadge blocked={status.blocked} /></td>
                       <td className="px-4 py-2.5 text-right">
                         <div className="flex items-center justify-end gap-3">
