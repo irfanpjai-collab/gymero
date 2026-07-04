@@ -326,3 +326,53 @@ export async function getLastMembershipExpiry(memberId: string): Promise<string 
   }
 }
 
+// Corrects an existing membership's expiry_date in place — distinct from
+// renewMembership, which always creates a new row extending the period. This
+// is for fixing a mistake on the current record itself (wrong plan picked,
+// data-entry error), so it requires a reason and an explicit staff
+// attribution rather than just relying on whoever's logged in (useful when
+// staff share one login). Logged to membership_expiry_edits for a full
+// history — see supabase/membership_expiry_edits.sql.
+export async function updateMembershipExpiry(
+  membershipId: string,
+  data: { new_expiry_date: string; reason: string; edited_by_user_id: string }
+): Promise<{ error?: string }> {
+  try {
+    const profile = await requireRole(['admin', 'receptionist'])
+    const supabase = await createClient()
+
+    if (!data.reason.trim()) throw new Error('A reason is required to edit the expiry date')
+    if (!data.edited_by_user_id) throw new Error('Select which staff member made this change')
+
+    const { data: membership, error: fetchError } = await supabase
+      .from('memberships')
+      .select('expiry_date')
+      .eq('id', membershipId)
+      .single()
+    if (fetchError || !membership) throw new Error('Membership not found')
+
+    const { error: updateError } = await supabase
+      .from('memberships')
+      .update({ expiry_date: data.new_expiry_date })
+      .eq('id', membershipId)
+    if (updateError) throw updateError
+
+    const { error: logError } = await supabase.from('membership_expiry_edits').insert({
+      membership_id: membershipId,
+      old_expiry_date: (membership as { expiry_date: string }).expiry_date,
+      new_expiry_date: data.new_expiry_date,
+      reason: data.reason.trim(),
+      edited_by_user_id: data.edited_by_user_id,
+      performed_by_user_id: profile.user_id,
+    })
+    if (logError) console.error('updateMembershipExpiry: audit log failed —', logError.message)
+
+    revalidateTag('members', {})
+    revalidatePath('/members')
+    return {}
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return { error: message }
+  }
+}
+

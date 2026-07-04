@@ -14,6 +14,7 @@ import {
   FileText,
   Loader2,
   ChevronDown,
+  AlertCircle,
 } from 'lucide-react'
 import { getMember, updateMember } from '@/app/actions/members'
 import type { Member } from '@/types'
@@ -78,7 +79,11 @@ export default function EditMemberPage({ params }: { params: Params }) {
         toast.error(result.error)
         return
       }
-      toast.success('Member updated successfully!')
+      if (result.memberIdChanged) {
+        toast.success('Member ID updated — device will remove the old ID and push the new one on its next check-in. The member will need to re-scan their fingerprint.')
+      } else {
+        toast.success('Member updated successfully!')
+      }
       router.push(`/members/${id}`)
     })
   }
@@ -140,14 +145,24 @@ export default function EditMemberPage({ params }: { params: Params }) {
             <h2 className="text-sm font-semibold text-foreground">Member Information</h2>
           </div>
 
-          {/* Member ID (read-only) + Full Name */}
+          <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 flex items-start gap-2.5">
+            <AlertCircle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-amber-300">
+              Member ID also doubles as this person&apos;s fingerprint PIN on the biometric device. Changing it will remove the old ID from the device and push the new one on its next check-in — the member will need to re-scan their fingerprint afterward.
+            </p>
+          </div>
+
+          {/* Member ID + Full Name */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="Member ID">
+            <Field label="Member ID" required>
               <input
-                type="text"
-                value={`#${member.member_id}`}
-                disabled
-                className={`${inputCls} opacity-50 cursor-not-allowed`}
+                type="number"
+                name="member_id"
+                required
+                min={1}
+                step={1}
+                defaultValue={member.member_id}
+                className={inputCls}
               />
             </Field>
             <Field label="Full Name" required>

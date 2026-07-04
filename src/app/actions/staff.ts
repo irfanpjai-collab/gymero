@@ -1,9 +1,35 @@
 'use server'
 
 import { requireRole } from '@/lib/auth'
+import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
 import type { UserRole } from '@/types'
+
+export interface StaffOption {
+  user_id: string
+  name: string
+  role: UserRole
+}
+
+// Populates the "who made this change" attribution dropdown (e.g. on the
+// membership expiry edit) — admins and coaches only, not receptionist, per
+// how that feature was scoped.
+export async function getStaffForAttribution(): Promise<StaffOption[]> {
+  try {
+    const supabase = await createClient()
+    const { data } = await supabase
+      .from('user_profiles')
+      .select('user_id, name, role')
+      .in('role', ['admin', 'coach'])
+      .order('name', { ascending: true })
+
+    return (data ?? []) as StaffOption[]
+  } catch (err) {
+    console.error('getStaffForAttribution error:', err)
+    return []
+  }
+}
 
 // Creates both the Supabase Auth login and the matching user_profiles row in one
 // step — signup is disabled app-wide, so this is now the only way to add staff.

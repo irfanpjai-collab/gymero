@@ -27,6 +27,7 @@ import { formatDate, formatCurrency, getMembershipStatus, getStatusColor, getDay
 import { Badge } from '@/components/ui/badge'
 import RenewDialog from './renew-dialog'
 import { PtDialog, CancelPtButton } from './pt-dialog'
+import EditExpiryDialog from './edit-expiry-dialog'
 import type { Payment } from '@/types'
 
 const PUNCH_LABELS: Record<number, string> = {
@@ -354,9 +355,12 @@ export default async function MemberDetailPage({
                   <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">
                     Expiry Date
                   </p>
-                  <p className="text-sm font-medium text-foreground">
-                    {formatDate(membership.expiry_date)}
-                  </p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-sm font-medium text-foreground">
+                      {formatDate(membership.expiry_date)}
+                    </p>
+                    <EditExpiryDialog membershipId={membership.id} currentExpiryDate={membership.expiry_date} />
+                  </div>
                 </div>
                 <div className="space-y-0.5">
                   <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium">
