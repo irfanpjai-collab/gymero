@@ -9,6 +9,15 @@ function textResponse(body: string, status = 200): NextResponse {
   return new NextResponse(body, { status, headers: { 'Content-Type': 'text/plain' } })
 }
 
+// The device reports ATTLOG timestamps as its own local wall-clock time
+// (e.g. "2026-07-04 19:28:31") with no timezone marker. Parsing that directly
+// with `new Date(...)` treats it as UTC (Vercel's runtime clock is UTC),
+// storing punches ~5:30 in the future. The device's clock is IST — attach
+// that offset explicitly so the stored instant is the real UTC moment.
+function parseDeviceTimestamp(dateTime: string): string {
+  return new Date(`${dateTime.replace(' ', 'T')}+05:30`).toISOString()
+}
+
 async function upsertDevice(serialNumber: string): Promise<void> {
   const supabase = createAdminClient()
   const { error } = await supabase.from('adms_devices').upsert({
@@ -78,7 +87,7 @@ export async function POST(req: NextRequest) {
         {
           member_id: member?.id ?? null,
           device_user_id: pin,
-          punched_at: new Date(dateTime).toISOString(),
+          punched_at: parseDeviceTimestamp(dateTime),
           punch_type: 0,
           status: Number(status) || 0,
           source: 'adms',
