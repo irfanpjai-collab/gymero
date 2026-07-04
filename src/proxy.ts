@@ -27,7 +27,9 @@ export async function proxy(request: NextRequest) {
   // allowlist, etc.) and must never be redirected to an HTML /login page — a
   // redirect response is meaningless to a cron caller or a physical device polling
   // for plain-text responses, and would silently break them with no clear error.
-  if (request.nextUrl.pathname.startsWith('/api/')) {
+  // /iclock/* must be included here too: proxy runs before next.config.ts rewrites,
+  // so at this point the pathname is still /iclock/... (not yet /api/adms/...).
+  if (request.nextUrl.pathname.startsWith('/api/') || request.nextUrl.pathname.startsWith('/iclock/')) {
     return supabaseResponse
   }
 
