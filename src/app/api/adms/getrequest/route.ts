@@ -15,22 +15,22 @@ interface PendingCommand {
   attempts: number
 }
 
-// Builds the device-bound command string. This exact syntax is the least
-// standardized part of ADMS across firmware versions — commonly-used shape,
-// not verified against this specific K30 Pro. Expect a tuning pass once tested.
+// Builds the device-bound command string. Confirmed against the real device:
+// "USER ADD"/"USER DEL" gets rejected with Return=-1002 — this firmware wants
+// the DATA UPDATE/DELETE USERINFO form instead (the full word DELETE, not DEL).
 function buildCommandString(cmd: PendingCommand): string {
   const pin = cmd.member_id
   const name = cmd.full_name ?? `Member ${pin}`
 
   switch (cmd.operation) {
     case 'enroll':
-      return `USER ADD PIN=${pin}\tName=${name}\tPri=0\tPasswd=\tCard=\tGrp=1\tTZ=1`
+      return `DATA UPDATE USERINFO PIN=${pin}\tName=${name}\tPri=0\tPasswd=\tCard=\tGrp=1\tTZ=1`
     case 'block':
-      return `USER ADD PIN=${pin}\tName=${name}\tPri=0\tPasswd=\tCard=\tGrp=0\tTZ=0`
+      return `DATA UPDATE USERINFO PIN=${pin}\tName=${name}\tPri=0\tPasswd=\tCard=\tGrp=0\tTZ=0`
     case 'unblock':
-      return `USER ADD PIN=${pin}\tName=${name}\tPri=0\tPasswd=\tCard=\tGrp=1\tTZ=1`
+      return `DATA UPDATE USERINFO PIN=${pin}\tName=${name}\tPri=0\tPasswd=\tCard=\tGrp=1\tTZ=1`
     case 'remove':
-      return `USER DEL PIN=${pin}`
+      return `DATA DELETE USERINFO PIN=${pin}`
   }
 }
 
