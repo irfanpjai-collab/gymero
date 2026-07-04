@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getSheetValues } from '@/lib/google-sheets'
+import { revalidateTag, revalidatePath } from 'next/cache'
 
 // Pulls new/edited rows from the gym's Google Form intake sheet (a *separate*
 // spreadsheet from the one-way backup in sheets-backup.ts — this direction is
@@ -187,6 +188,16 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
         result.errors.push(`Member ID ${memberId}: membership creation failed — ${membershipError.message}`)
       }
     }
+  }
+
+  // Without this, the Dashboard/Members pages (both behind unstable_cache,
+  // see src/lib/cached-queries.ts) wouldn't pick up what this cron just wrote
+  // until their normal 5-minute revalidate window happened to expire —
+  // correct in the DB immediately, invisible in the UI for up to 5 minutes.
+  if (result.created > 0 || result.updated > 0) {
+    revalidateTag('members', {})
+    revalidatePath('/members')
+    revalidatePath('/dashboard')
   }
 
   result.ok = result.errors.length === 0
