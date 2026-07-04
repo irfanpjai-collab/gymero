@@ -136,7 +136,7 @@ export default async function MemberDetailPage({
         <div>
           <h4 className="text-sm font-semibold text-foreground">Grace Period Active</h4>
           <p className="text-xs text-orange-300 mt-1">
-            This member's membership expired on {formatDate(membership.expiry_date)} ({daysSince} days ago).
+            This member&apos;s membership expired on {formatDate(membership.expiry_date)} ({daysSince} days ago).
             They are within the {gracePeriodDays}-day grace period and have <strong>{daysLeftGrace} days left</strong> to renew without paying the admission fee again.
           </p>
         </div>
@@ -150,7 +150,7 @@ export default async function MemberDetailPage({
         <div>
           <h4 className="text-sm font-semibold text-foreground">Membership Lapsed</h4>
           <p className="text-xs text-red-300 mt-1">
-            This member's membership expired on {formatDate(membership.expiry_date)} ({daysSince} days ago).
+            This member&apos;s membership expired on {formatDate(membership.expiry_date)} ({daysSince} days ago).
             Since it has been more than {gracePeriodDays} days, the grace period has expired. They must pay the <strong>admission fee</strong> to rejoin.
           </p>
         </div>

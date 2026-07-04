@@ -60,77 +60,81 @@ export default function RenewDialog({
   const [admissionFee, setAdmissionFee] = useState('0')
   const [needsAdmissionFee, setNeedsAdmissionFee] = useState(false)
   const [lastExpiryDate, setLastExpiryDate] = useState<string | null>(null)
-  const [defaultAdmissionFee, setDefaultAdmissionFee] = useState(600)
+  // Admission fee default is a per-browser localStorage suggestion (staff can
+  // always override it per entry) — read once via lazy init rather than an
+  // effect, since this never needs to re-run after mount.
+  const [defaultAdmissionFee] = useState(() => {
+    try {
+      const saved = localStorage.getItem('gym_settings')
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        if (parsed.admissionFee !== undefined) return Number(parsed.admissionFee)
+      }
+    } catch { /* ignore malformed localStorage value */ }
+    return 600
+  })
+  // Grace period is authoritative from the server — it drives real status
+  // classification elsewhere in the app, so a stale per-browser localStorage
+  // copy isn't good enough here. 180 is just the pre-fetch placeholder.
   const [gracePeriodDays, setGracePeriodDays] = useState(180)
   const [daysSince, setDaysSince] = useState<number | null>(null)
   const [paymentMethod, setPaymentMethod] = useState('cash')
 
-  // Admission fee default is still a per-browser localStorage suggestion
-  // (staff can always override it per entry). Grace period is authoritative
-  // from the server — it drives real status classification elsewhere in the
-  // app, so a stale per-browser localStorage copy isn't good enough here.
   useEffect(() => {
-    const saved = localStorage.getItem('gym_settings')
-    if (saved) {
-      const parsed = JSON.parse(saved)
-      if (parsed.admissionFee !== undefined) setDefaultAdmissionFee(Number(parsed.admissionFee))
-    }
     getGracePeriodDays().then(setGracePeriodDays)
   }, [])
 
-  useEffect(() => {
-    if (open) {
-      if (plans.length === 0 && !plansLoading) {
-        setPlansLoading(true)
-        getPlans().then((data) => {
-          setPlans(data)
-          setPlansLoading(false)
-        })
+  // Loads plans + last-expiry info the moment the dialog opens — driven from
+  // the open/close handler itself (a user click) rather than an effect
+  // reacting to `open`, since this is a one-shot fetch per open, not state
+  // that needs to stay in sync with something external.
+  async function loadOnOpen(currentGracePeriodDays: number) {
+    if (plans.length === 0) {
+      setPlansLoading(true)
+      const data = await getPlans()
+      setPlans(data)
+      setPlansLoading(false)
+    }
+
+    const expiry = await getLastMembershipExpiry(memberId)
+    setLastExpiryDate(expiry)
+    if (!expiry) {
+      setNeedsAdmissionFee(true)
+      setAdmissionFee(String(defaultAdmissionFee))
+      setStartDate(today)
+    } else {
+      const expiryDateObj = parseISO(expiry)
+      const days = differenceInDays(new Date(), expiryDateObj)
+      setDaysSince(days)
+      if (days > currentGracePeriodDays) {
+        setNeedsAdmissionFee(true)
+        setAdmissionFee(String(defaultAdmissionFee))
+      } else {
+        setNeedsAdmissionFee(false)
+        setAdmissionFee('0')
       }
 
-      // Fetch last membership expiry to determine if admission fee is required
-      getLastMembershipExpiry(memberId).then((expiry) => {
-        setLastExpiryDate(expiry)
-        if (!expiry) {
-          setNeedsAdmissionFee(true)
-          setAdmissionFee(String(defaultAdmissionFee))
-          setStartDate(today)
-        } else {
-          // If membership has expired, calculate days since expiry
-          const expiryDateObj = parseISO(expiry)
-          const days = differenceInDays(new Date(), expiryDateObj)
-          setDaysSince(days)
-          if (days > gracePeriodDays) {
-            setNeedsAdmissionFee(true)
-            setAdmissionFee(String(defaultAdmissionFee))
-          } else {
-            setNeedsAdmissionFee(false)
-            setAdmissionFee('0')
-          }
-
-          // Logical fix: Default start date to the day after expiry if expiry is in the future (overlapping fix)
-          if (days < 0) {
-            const nextDay = addDays(expiryDateObj, 1)
-            setStartDate(format(nextDay, 'yyyy-MM-dd'))
-          } else {
-            setStartDate(today)
-          }
-        }
-      })
+      // Default start date to the day after expiry if expiry is in the future (overlapping fix)
+      if (days < 0) {
+        const nextDay = addDays(expiryDateObj, 1)
+        setStartDate(format(nextDay, 'yyyy-MM-dd'))
+      } else {
+        setStartDate(today)
+      }
     }
-  }, [open, plans.length, plansLoading, memberId, defaultAdmissionFee, gracePeriodDays])
+  }
 
-  // Auto-fill amount when plan changes
-  useEffect(() => {
-    if (selectedPlanId && plans.length > 0) {
-      const plan = plans.find((p) => p.id === selectedPlanId)
-      if (plan) setAmount(String(plan.fee))
-    }
-  }, [selectedPlanId, plans])
+  function handlePlanChange(planId: string) {
+    setSelectedPlanId(planId)
+    const plan = plans.find((p) => p.id === planId)
+    if (plan) setAmount(String(plan.fee))
+  }
 
   function handleOpenChange(v: boolean) {
     setOpen(v)
-    if (!v) {
+    if (v) {
+      loadOnOpen(gracePeriodDays)
+    } else {
       // reset state on close
       setSelectedPlanId('')
       setStartDate(today)
@@ -233,7 +237,7 @@ export default function RenewDialog({
                   <div className="relative">
                     <select
                       value={selectedPlanId}
-                      onChange={(e) => setSelectedPlanId(e.target.value)}
+                      onChange={(e) => handlePlanChange(e.target.value)}
                       required
                       className={selectCls}
                     >

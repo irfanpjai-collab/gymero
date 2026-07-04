@@ -5,6 +5,15 @@ import { requireRole } from '@/lib/auth'
 import { revalidateTag, revalidatePath } from 'next/cache'
 import { DEFAULT_GRACE_PERIOD_DAYS } from '@/lib/utils'
 
+// Supabase's query errors are plain objects with a `.message`, not real
+// `Error` instances — `String(err)` on one of those prints "[object Object]"
+// instead of anything useful, which is exactly what surfaced this.
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message
+  if (err && typeof err === 'object' && 'message' in err) return String((err as { message: unknown }).message)
+  return String(err)
+}
+
 // Single source of truth for grace period, readable from server components
 // (Dashboard, Members, Reports) — not the old localStorage-only value, which
 // server-rendered pages couldn't see and which silently diverged between
@@ -38,7 +47,6 @@ export async function updateGracePeriodDays(days: number): Promise<{ error?: str
     revalidatePath('/reports')
     return {}
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    return { error: message }
+    return { error: errorMessage(err) }
   }
 }
