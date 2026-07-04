@@ -14,10 +14,9 @@ function textResponse(body: string, status = 200): NextResponse {
 // did, letting any caller flip a command's status without proving it's the
 // device that command was actually sent to.
 async function ack(sn: string | null, id: string | null, ret: string | null): Promise<void> {
-  if (!id) return
+  if (!sn) return
   const supabase = createAdminClient()
 
-  if (!sn) return
   const { data: device } = await supabase
     .from('adms_devices')
     .select('serial_number')
@@ -25,14 +24,21 @@ async function ack(sn: string | null, id: string | null, ret: string | null): Pr
     .maybeSingle()
   if (!device) return
 
-  await supabase
-    .from('adms_commands')
-    .update({
-      status: ret === '0' ? 'done' : 'failed',
-      result: `Return=${ret ?? 'unknown'}`,
-      completed_at: new Date().toISOString(),
-    })
-    .eq('id', id)
+  const update = {
+    status: ret === '0' ? 'done' : 'failed',
+    result: `Return=${ret ?? 'unknown'}`,
+    completed_at: new Date().toISOString(),
+  }
+
+  // Commands are sent with C:data: prefix so the device echoes back ID=data,
+  // not a UUID. Mark all currently-sent commands as done/failed in that case.
+  if (!id || id === 'data') {
+    await supabase.from('adms_commands').update(update).eq('status', 'sent')
+    return
+  }
+
+  // Fallback for any command that carried a real UUID as its ID
+  await supabase.from('adms_commands').update(update).eq('id', id)
 }
 
 export async function POST(req: NextRequest) {

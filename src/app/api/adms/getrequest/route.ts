@@ -24,11 +24,11 @@ function buildCommandString(cmd: PendingCommand): string {
 
   switch (cmd.operation) {
     case 'enroll':
-      return `DATA UPDATE USERINFO PIN=${pin}\tName=${name}\tPri=0\tPasswd=\tCard=\tGrp=1\tTZ=0000000100000000`
+      return `DATA UPDATE USERINFO PIN=${pin}\tName=${name}\tPri=0\tPasswd=\tCard=\tGrp=1\tTZ=1`
     case 'block':
-      return `DATA UPDATE USERINFO PIN=${pin}\tName=${name}\tPri=0\tPasswd=\tCard=\tGrp=0\tTZ=0000000000000000`
+      return `DATA UPDATE USERINFO PIN=${pin}\tName=${name}\tPri=0\tPasswd=\tCard=\tGrp=0\tTZ=0`
     case 'unblock':
-      return `DATA UPDATE USERINFO PIN=${pin}\tName=${name}\tPri=0\tPasswd=\tCard=\tGrp=1\tTZ=0000000100000000`
+      return `DATA UPDATE USERINFO PIN=${pin}\tName=${name}\tPri=0\tPasswd=\tCard=\tGrp=1\tTZ=1`
     case 'remove':
       return `DATA DELETE USERINFO PIN=${pin}`
   }
@@ -72,7 +72,8 @@ export async function GET(req: NextRequest) {
   if (!pending || pending.length === 0) return textResponse('OK')
 
   const rows = pending as PendingCommand[]
-  const lines = rows.map(cmd => `C:${cmd.id}:${buildCommandString(cmd)}`)
+  // eSSL devices expect C:data: as the literal prefix, not a UUID.
+  const lines = rows.map(cmd => `C:data:${buildCommandString(cmd)}`)
 
   await Promise.all(
     rows.map(cmd =>
