@@ -13,6 +13,10 @@ export function formatDate(date: string | Date): string {
   return format(new Date(date), 'dd/MM/yyyy')
 }
 
+export function formatDateTime(date: string | Date): string {
+  return format(new Date(date), 'dd/MM/yyyy, hh:mm a')
+}
+
 export function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount)
 }

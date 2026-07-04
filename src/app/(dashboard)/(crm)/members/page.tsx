@@ -11,8 +11,8 @@ import {
   ChevronRight,
   UserX,
 } from 'lucide-react'
-import { getCachedMembers } from '@/lib/cached-queries'
-import { formatDate, getMembershipStatus, getStatusColor } from '@/lib/utils'
+import { getCachedMembers, getCachedLastCheckIns } from '@/lib/cached-queries'
+import { formatDate, formatDateTime, getMembershipStatus, getStatusColor } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import type { Member } from '@/types'
 
@@ -96,7 +96,10 @@ async function MembersTable({
   statusFilter?: string
   page: number
 }) {
-  const allMembers = await getCachedMembers(search)
+  const [allMembers, lastCheckIns] = await Promise.all([
+    getCachedMembers(search),
+    getCachedLastCheckIns(),
+  ])
 
   const filtered = allMembers.filter((m) => {
     if (!statusFilter || statusFilter === 'all') return true
@@ -179,7 +182,7 @@ async function MembersTable({
         ) : (
           <>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm min-w-[700px]">
+              <table className="w-full text-sm min-w-[850px]">
                 <thead>
                   <tr className="border-b border-border bg-muted/40">
                     <th className="text-left px-5 py-3 text-muted-foreground font-medium text-xs uppercase tracking-wider">ID</th>
@@ -189,6 +192,7 @@ async function MembersTable({
                     <th className="text-left px-4 py-3 text-muted-foreground font-medium text-xs uppercase tracking-wider">Joined</th>
                     <th className="text-left px-4 py-3 text-muted-foreground font-medium text-xs uppercase tracking-wider">Status</th>
                     <th className="text-left px-4 py-3 text-muted-foreground font-medium text-xs uppercase tracking-wider">Expiry</th>
+                    <th className="text-left px-4 py-3 text-muted-foreground font-medium text-xs uppercase tracking-wider">Last Checked</th>
                     <th className="px-5 py-3 text-muted-foreground font-medium text-xs uppercase tracking-wider text-right">Actions</th>
                   </tr>
                 </thead>
@@ -219,6 +223,9 @@ async function MembersTable({
                         <td className="px-4 py-3.5"><StatusBadge member={member} /></td>
                         <td className="px-4 py-3.5 text-muted-foreground whitespace-nowrap">
                           {expiryDate ? formatDate(expiryDate) : '—'}
+                        </td>
+                        <td className="px-4 py-3.5 text-muted-foreground whitespace-nowrap">
+                          {lastCheckIns[member.id] ? formatDateTime(lastCheckIns[member.id]) : 'Never'}
                         </td>
                         <td className="px-5 py-3.5">
                           <div className="flex items-center justify-end gap-2">

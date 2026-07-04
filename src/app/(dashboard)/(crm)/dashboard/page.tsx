@@ -10,15 +10,17 @@ import {
   TrendingUp,
   Ticket,
   RefreshCw,
+  ShieldAlert,
 } from 'lucide-react'
 import {
   getCachedDashboardStats,
   getCachedGracePeriodMembers,
   getCachedExpiringMembers,
   getCachedMembers,
+  getCachedExpiredCheckIns,
 } from '@/lib/cached-queries'
 import WelcomeBanner from '@/components/dashboard/WelcomeBanner'
-import { formatDate, formatCurrency } from '@/lib/utils'
+import { formatDate, formatDateTime, formatCurrency } from '@/lib/utils'
 
 function StatCard({
   label,
@@ -55,11 +57,12 @@ function StatCard({
 }
 
 export default async function DashboardPage() {
-  const [stats, gracePeriodMembers, expiringMembers, allMembers] = await Promise.all([
+  const [stats, gracePeriodMembers, expiringMembers, allMembers, expiredCheckIns] = await Promise.all([
     getCachedDashboardStats(),
     getCachedGracePeriodMembers(8),
     getCachedExpiringMembers(7),
     getCachedMembers(),
+    getCachedExpiredCheckIns(8),
   ])
 
   const today = new Date()
@@ -310,6 +313,51 @@ export default async function DashboardPage() {
           )}
         </div>
       </div>
+
+      {/* Expired members who still checked in */}
+      {expiredCheckIns.length > 0 && (
+        <div className="bg-card rounded-2xl border border-red-500/20 overflow-hidden animate-fade-in-up card-hover">
+          <div className="px-5 py-4 border-b border-border flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-red-500/10 flex items-center justify-center">
+              <ShieldAlert className="w-4 h-4 text-red-400" />
+            </div>
+            <div>
+              <h2 className="font-semibold text-foreground text-sm">Checked In After Expiry</h2>
+              <p className="text-muted-foreground text-[11px]">Members with no active membership who still punched in on the device</p>
+            </div>
+            <span className="text-xs bg-red-500/10 text-red-400 border border-red-500/20 rounded-full px-2 py-0.5 font-medium">
+              {expiredCheckIns.length}
+            </span>
+          </div>
+          <div className="divide-y divide-border">
+            {expiredCheckIns.map((c) => (
+              <div key={c.id} className="flex items-center justify-between px-5 py-3 table-row-hover">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-9 h-9 rounded-full bg-red-500/10 border border-red-500/15 flex items-center justify-center flex-shrink-0">
+                    <span className="text-red-400 text-xs font-bold">{c.fullName.charAt(0).toUpperCase()}</span>
+                  </div>
+                  <div className="min-w-0">
+                    <Link href={`/members/${c.memberId}`} className="text-foreground text-sm font-medium hover:text-primary transition-colors truncate block">
+                      {c.fullName} <span className="text-muted-foreground/60 font-normal">#{c.memberNumber}</span>
+                    </Link>
+                    <p className="text-muted-foreground/60 text-xs">
+                      Checked in {formatDateTime(c.punchedAt)}
+                      {c.expiryDate ? ` · expired ${formatDate(c.expiryDate)}` : ' · no membership on record'}
+                    </p>
+                  </div>
+                </div>
+                <Link
+                  href={`/members/${c.memberId}?renew=1`}
+                  className="inline-flex items-center gap-1 text-xs bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded-lg px-2.5 py-1.5 font-medium transition-colors flex-shrink-0 ml-3"
+                >
+                  <RefreshCw className="w-3 h-3" />
+                  Renew
+                </Link>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
