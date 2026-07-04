@@ -111,6 +111,59 @@ export async function getCoachPtClients(coachId: string): Promise<PtClient[]> {
   }
 }
 
+export interface MemberPtInfo {
+  ptMembershipId: string
+  coachId: string | null
+  coachName: string | null
+  planName: string
+  expiryDate: string
+  status: 'active' | 'expired' | 'cancelled'
+}
+
+// The member detail page only needs the single most recent PT membership —
+// same "compute status against today" reasoning as getCoachPtClients.
+export async function getMemberPt(memberId: string): Promise<MemberPtInfo | null> {
+  try {
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from('pt_memberships')
+      .select(`
+        id, expiry_date, status,
+        coach:coaches!pt_memberships_coach_id_fkey(id, name),
+        plan:pt_plans!pt_memberships_plan_id_fkey(name)
+      `)
+      .eq('member_id', memberId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (error) throw error
+    if (!data) return null
+
+    type Row = {
+      id: string
+      expiry_date: string
+      status: 'active' | 'expired' | 'cancelled'
+      coach: { id: string; name: string } | null
+      plan: { name: string } | null
+    }
+    const row = data as unknown as Row
+    const todayStr = new Date().toISOString().slice(0, 10)
+
+    return {
+      ptMembershipId: row.id,
+      coachId: row.coach?.id ?? null,
+      coachName: row.coach?.name ?? null,
+      planName: row.plan?.name ?? 'PT Plan',
+      expiryDate: row.expiry_date,
+      status: row.status === 'cancelled' ? 'cancelled' : row.expiry_date >= todayStr ? 'active' : 'expired',
+    }
+  } catch (err) {
+    console.error('getMemberPt error:', err)
+    return null
+  }
+}
+
 export async function assignPtMembership(data: {
   member_id: string
   coach_id: string

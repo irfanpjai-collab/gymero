@@ -22,9 +22,11 @@ import {
 import { getMember } from '@/app/actions/members'
 import { getPayments } from '@/app/actions/payments'
 import { getMemberAdmsInfo } from '@/app/actions/adms'
+import { getMemberPt } from '@/app/actions/pt'
 import { formatDate, formatCurrency, getMembershipStatus, getStatusColor, getDaysUntilExpiry, getDaysSinceExpiry } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import RenewDialog from './renew-dialog'
+import { PtDialog, CancelPtButton } from './pt-dialog'
 import type { Payment } from '@/types'
 
 const PUNCH_LABELS: Record<number, string> = {
@@ -96,10 +98,11 @@ export default async function MemberDetailPage({
   const { id } = await params
   const { renew } = await searchParams
 
-  const [member, payments, biometric] = await Promise.all([
+  const [member, payments, biometric, pt] = await Promise.all([
     getMember(id),
     getPayments(id),
     getMemberAdmsInfo(id),
+    getMemberPt(id),
   ])
 
   if (!member) notFound()
@@ -253,6 +256,49 @@ export default async function MemberDetailPage({
               <Fingerprint className="w-3.5 h-3.5" />
               Manage on Biometric page
             </Link>
+          </div>
+
+          {/* Personal Training */}
+          <div className="bg-card rounded-2xl border border-border p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-purple-500/10 flex items-center justify-center">
+                  <Dumbbell className="w-3.5 h-3.5 text-purple-400" />
+                </div>
+                <h2 className="text-sm font-semibold text-foreground">Personal Training</h2>
+              </div>
+              {pt && (
+                <Badge
+                  className={`border text-xs ${
+                    pt.status === 'active'
+                      ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+                      : pt.status === 'expired'
+                      ? 'text-red-400 bg-red-500/10 border-red-500/20'
+                      : 'text-muted-foreground bg-slate-500/10 border-slate-500/20'
+                  }`}
+                >
+                  {pt.status === 'active' ? 'Active' : pt.status === 'expired' ? 'Expired' : 'Cancelled'}
+                </Badge>
+              )}
+            </div>
+
+            {pt ? (
+              <>
+                <p className="text-sm text-foreground">
+                  {pt.planName}{pt.coachName ? ` with ${pt.coachName}` : ''}
+                </p>
+                <p className="text-xs text-muted-foreground">Expires {formatDate(pt.expiryDate)}</p>
+                <div className="flex items-center gap-2 pt-1">
+                  <PtDialog memberId={id} label={pt.status === 'active' ? 'Renew PT' : 'Add PT'} />
+                  {pt.status === 'active' && <CancelPtButton ptMembershipId={pt.ptMembershipId} />}
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-xs text-muted-foreground">This member doesn&apos;t have a personal training package.</p>
+                <PtDialog memberId={id} label="Add PT" />
+              </>
+            )}
           </div>
         </div>
 

@@ -16,12 +16,11 @@ import {
   UserMinus,
   Search,
   Dumbbell,
-  Ban,
   Settings2,
 } from 'lucide-react'
 import { getCoaches, createCoach, getCoachMembers, assignMember, unassignMember } from '@/app/actions/coaches'
 import { getMembers } from '@/app/actions/members'
-import { getPtPlans, createPtPlan, getCoachPtClients, assignPtMembership, cancelPtMembership, type PtClient } from '@/app/actions/pt'
+import { getPtPlans, createPtPlan, getCoachPtClients, type PtClient } from '@/app/actions/pt'
 import { Badge } from '@/components/ui/badge'
 import { formatDate } from '@/lib/utils'
 import type { Coach, Member, PtPlan } from '@/types'
@@ -280,115 +279,6 @@ function AssignMemberDialog({ open, onClose, onSuccess, coach, assignedIds }: {
   )
 }
 
-// ─── Sell PT package ──────────────────────────────────────────────────────────
-
-function SellPtDialog({ open, onClose, onSuccess, coach, plans }: {
-  open: boolean; onClose: () => void; onSuccess: () => void; coach: Coach; plans: PtPlan[]
-}) {
-  const [isPending, startTransition] = useTransition()
-  const [selectedMember, setSelectedMember] = useState<Member | null>(null)
-  const [planId, setPlanId] = useState(plans[0]?.id ?? '')
-  const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10))
-  const [amount, setAmount] = useState(plans[0] ? String(plans[0].fee) : '')
-  const [amountNote, setAmountNote] = useState('')
-  const [paymentMethod, setPaymentMethod] = useState('cash')
-  const [error, setError] = useState('')
-
-  const selectedPlan = plans.find((p) => p.id === planId)
-  const amountDiffers = selectedPlan && parseFloat(amount || '0') !== selectedPlan.fee
-
-  function handlePlanChange(id: string) {
-    setPlanId(id)
-    const plan = plans.find((p) => p.id === id)
-    if (plan) setAmount(String(plan.fee))
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setError('')
-    if (!selectedMember) { setError('Select a member first'); return }
-    startTransition(async () => {
-      const result = await assignPtMembership({
-        member_id: selectedMember.id,
-        coach_id: coach.id,
-        plan_id: planId,
-        start_date: startDate,
-        amount: parseFloat(amount) || 0,
-        amount_note: amountNote || undefined,
-        payment_method: paymentMethod,
-      })
-      if (result.error) { setError(result.error); return }
-      onSuccess(); onClose()
-    })
-  }
-
-  if (plans.length === 0) {
-    return (
-      <Modal open={open} onClose={onClose} title={`Sell PT Package — ${coach.name}`}>
-        <p className="text-muted-foreground text-sm">No PT plans exist yet. Add one from &quot;Manage PT Plans&quot; first.</p>
-      </Modal>
-    )
-  }
-
-  return (
-    <Modal open={open} onClose={onClose} title={`Sell PT Package — ${coach.name}`}>
-      {error && <p className="text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2 mb-4">{error}</p>}
-      <div className="space-y-4">
-        <Field label="Member" required>
-          {selectedMember ? (
-            <div className="flex items-center justify-between text-sm bg-muted/50 rounded-lg px-3 py-2">
-              <span className="text-foreground font-medium">{selectedMember.full_name}</span>
-              <button type="button" onClick={() => setSelectedMember(null)} className="text-muted-foreground hover:text-foreground">
-                <X className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          ) : (
-            <MemberSearchPicker onSelect={setSelectedMember} />
-          )}
-        </Field>
-
-        {selectedMember && (
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <Field label="PT Plan" required>
-              <select value={planId} onChange={(e) => handlePlanChange(e.target.value)} className={inputCls} required>
-                {plans.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name} — {p.duration_months}mo — ₹{p.fee}</option>
-                ))}
-              </select>
-            </Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Start Date" required>
-                <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className={inputCls} required />
-              </Field>
-              <Field label="Amount (₹)" required>
-                <input type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} className={inputCls} required />
-              </Field>
-            </div>
-            {amountDiffers && (
-              <Field label="Reason for different amount" required>
-                <input type="text" placeholder="e.g. Discount applied" value={amountNote} onChange={(e) => setAmountNote(e.target.value)} className={inputCls} required />
-              </Field>
-            )}
-            <Field label="Payment Method" required>
-              <select value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value)} className={inputCls} required>
-                <option value="cash">Cash</option>
-                <option value="upi">UPI</option>
-                <option value="bank_transfer">Bank Transfer</option>
-              </select>
-            </Field>
-            <div className="flex gap-3 pt-1">
-              <button type="button" onClick={onClose} className="flex-1 px-4 py-2.5 border border-border hover:border-border-bright text-muted-foreground hover:text-foreground rounded-xl text-sm transition-colors">Cancel</button>
-              <button type="submit" disabled={isPending} className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-primary hover:bg-primary/90 disabled:opacity-60 text-white rounded-xl text-sm font-semibold transition-colors">
-                {isPending ? <><Loader2 className="w-4 h-4 animate-spin" />Saving…</> : 'Sell Package'}
-              </button>
-            </div>
-          </form>
-        )}
-      </div>
-    </Modal>
-  )
-}
-
 // ─── Coach card ───────────────────────────────────────────────────────────────
 
 function CoachAvatar({ name }: { name: string }) {
@@ -406,7 +296,7 @@ function PtStatusBadge({ status }: { status: PtClient['status'] }) {
   return <Badge variant="secondary" className="text-xs">Cancelled</Badge>
 }
 
-function CoachCard({ coach, ptPlans }: { coach: Coach; ptPlans: PtPlan[] }) {
+function CoachCard({ coach }: { coach: Coach }) {
   const [membersOpen, setMembersOpen] = useState(false)
   const [members, setMembers] = useState<Member[]>([])
   const [membersLoading, setMembersLoading] = useState(false)
@@ -415,7 +305,6 @@ function CoachCard({ coach, ptPlans }: { coach: Coach; ptPlans: PtPlan[] }) {
   const [ptOpen, setPtOpen] = useState(false)
   const [ptClients, setPtClients] = useState<PtClient[]>([])
   const [ptLoading, setPtLoading] = useState(false)
-  const [sellDialogOpen, setSellDialogOpen] = useState(false)
   const [, startTransition] = useTransition()
 
   async function loadMembers() {
@@ -449,13 +338,6 @@ function CoachCard({ coach, ptPlans }: { coach: Coach; ptPlans: PtPlan[] }) {
     })
   }
 
-  function handleCancelPt(ptMembershipId: string) {
-    startTransition(async () => {
-      await cancelPtMembership(ptMembershipId)
-      loadPtClients()
-    })
-  }
-
   return (
     <div className="bg-card rounded-2xl border border-border p-5 shadow-card card-hover">
       <AssignMemberDialog
@@ -464,13 +346,6 @@ function CoachCard({ coach, ptPlans }: { coach: Coach; ptPlans: PtPlan[] }) {
         onSuccess={loadMembers}
         coach={coach}
         assignedIds={new Set(members.map((m) => m.id))}
-      />
-      <SellPtDialog
-        open={sellDialogOpen}
-        onClose={() => setSellDialogOpen(false)}
-        onSuccess={loadPtClients}
-        coach={coach}
-        plans={ptPlans}
       />
 
       <div className="flex items-start gap-4">
@@ -563,13 +438,9 @@ function CoachCard({ coach, ptPlans }: { coach: Coach; ptPlans: PtPlan[] }) {
 
       {ptOpen && (
         <div className="mt-3 border-t border-border pt-3 space-y-2">
-          <button
-            onClick={() => setSellDialogOpen(true)}
-            className="w-full flex items-center justify-center gap-1.5 text-xs bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded-lg px-3 py-2 font-medium transition-colors"
-          >
-            <Dumbbell className="w-3.5 h-3.5" />
-            Sell PT Package
-          </button>
+          <p className="text-muted-foreground/60 text-[11px] text-center">
+            PT packages are assigned from a member&apos;s own page.
+          </p>
           {ptLoading ? (
             <div className="flex items-center gap-2 text-muted-foreground text-xs py-2 justify-center">
               <Loader2 className="w-3.5 h-3.5 animate-spin" />Loading PT clients…
@@ -588,15 +459,6 @@ function CoachCard({ coach, ptPlans }: { coach: Coach; ptPlans: PtPlan[] }) {
                   </div>
                   <div className="flex items-center gap-2 flex-shrink-0 ml-2">
                     <PtStatusBadge status={c.status} />
-                    {c.status === 'active' && (
-                      <button
-                        onClick={() => handleCancelPt(c.ptMembershipId)}
-                        title="Cancel PT package"
-                        className="text-muted-foreground hover:text-red-400 transition-colors"
-                      >
-                        <Ban className="w-3.5 h-3.5" />
-                      </button>
-                    )}
                   </div>
                 </div>
               ))}
@@ -680,7 +542,7 @@ export default function CoachesClient({ initialCoaches, ptPlans: initialPtPlans 
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {coaches.map((coach) => (
-            <CoachCard key={coach.id} coach={coach} ptPlans={ptPlans} />
+            <CoachCard key={coach.id} coach={coach} />
           ))}
         </div>
       )}

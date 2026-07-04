@@ -20,7 +20,9 @@ import {
 import { createMember } from '@/app/actions/members'
 import { createMembership, getPlans } from '@/app/actions/memberships'
 import { getNextMemberId } from '@/app/actions/members'
-import type { MembershipPlan } from '@/types'
+import { getCoaches } from '@/app/actions/coaches'
+import { getPtPlans, assignPtMembership } from '@/app/actions/pt'
+import type { MembershipPlan, Coach, PtPlan } from '@/types'
 
 // ─── Field wrapper ────────────────────────────────────────────────────────────
 
@@ -78,6 +80,16 @@ export default function NewMemberPage() {
   const [amount, setAmount] = useState('')
   const [amountNote, setAmountNote] = useState('')
 
+  // Personal Training toggle
+  const [addPt, setAddPt] = useState(false)
+  const [coaches, setCoaches] = useState<Coach[]>([])
+  const [ptPlans, setPtPlans] = useState<PtPlan[]>([])
+  const [selectedCoachId, setSelectedCoachId] = useState('')
+  const [selectedPtPlanId, setSelectedPtPlanId] = useState('')
+  const [ptStartDate, setPtStartDate] = useState(today)
+  const [ptAmount, setPtAmount] = useState('')
+  const [ptAmountNote, setPtAmountNote] = useState('')
+
   // Load next member ID + default settings
   useEffect(() => {
     getNextMemberId().then((id) => {
@@ -107,6 +119,22 @@ export default function NewMemberPage() {
       if (plan) setAmount(String(plan.fee))
     }
   }, [selectedPlanId, plans])
+
+  // Load coaches + PT plans when PT section is toggled on
+  useEffect(() => {
+    if (addPt && coaches.length === 0 && ptPlans.length === 0) {
+      Promise.all([getCoaches(), getPtPlans()]).then(([coachData, planData]) => {
+        setCoaches(coachData)
+        setPtPlans(planData)
+      })
+    }
+  }, [addPt, coaches.length, ptPlans.length])
+
+  function handlePtPlanChange(id: string) {
+    setSelectedPtPlanId(id)
+    const plan = ptPlans.find((p) => p.id === id)
+    if (plan) setPtAmount(String(plan.fee))
+  }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
@@ -138,6 +166,25 @@ export default function NewMemberPage() {
 
         if (membershipResult.error) {
           toast.error(`Member created but membership failed: ${membershipResult.error}`)
+          router.push('/members')
+          return
+        }
+      }
+
+      if (addPt && selectedCoachId && selectedPtPlanId && newMemberId) {
+        const paymentMethod = formData.get('payment_method') as string
+        const ptResult = await assignPtMembership({
+          member_id: newMemberId,
+          coach_id: selectedCoachId,
+          plan_id: selectedPtPlanId,
+          start_date: ptStartDate,
+          amount: parseFloat(ptAmount) || 0,
+          amount_note: ptAmountNote.trim() || undefined,
+          payment_method: paymentMethod,
+        })
+
+        if (ptResult.error) {
+          toast.error(`Member created but PT package failed: ${ptResult.error}`)
           router.push('/members')
           return
         }
@@ -458,6 +505,148 @@ export default function NewMemberPage() {
                         const plan = plans.find((p) => p.id === selectedPlanId)
                         if (!plan) return null
                         const expiry = new Date(startDate)
+                        expiry.setMonth(expiry.getMonth() + plan.duration_months)
+                        return (
+                          <>
+                            Expiry:{' '}
+                            <span className="text-foreground font-medium">
+                              {expiry.toLocaleDateString('en-GB')}
+                            </span>
+                          </>
+                        )
+                      })()}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Personal Training section */}
+        <div className="bg-card rounded-2xl border border-border overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setAddPt((v) => !v)}
+            className="w-full flex items-center justify-between px-6 py-4 text-left hover:bg-muted/30 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-purple-500/10 flex items-center justify-center">
+                <Dumbbell className="w-3.5 h-3.5 text-purple-400" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-foreground">Personal Training</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Optional — assign a PT package now or later</p>
+              </div>
+            </div>
+            <div
+              className={`w-10 h-5 rounded-full transition-colors relative flex-shrink-0 ${
+                addPt ? 'bg-primary' : 'bg-muted'
+              }`}
+            >
+              <div
+                className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
+                  addPt ? 'translate-x-5' : 'translate-x-0.5'
+                }`}
+              />
+            </div>
+          </button>
+
+          {addPt && (
+            <div className="px-6 pb-6 space-y-4 border-t border-border pt-5">
+              {coaches.length === 0 || ptPlans.length === 0 ? (
+                <div className="flex items-center gap-2 text-muted-foreground text-sm py-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Loading…
+                </div>
+              ) : (
+                <>
+                  <Field label="Coach / Trainer" required={addPt}>
+                    <div className="relative">
+                      <select
+                        value={selectedCoachId}
+                        onChange={(e) => setSelectedCoachId(e.target.value)}
+                        required={addPt}
+                        className={selectCls}
+                      >
+                        <option value="">Select a coach…</option>
+                        {coaches.map((c) => (
+                          <option key={c.id} value={c.id}>{c.name}{c.specialization ? ` — ${c.specialization}` : ''}</option>
+                        ))}
+                      </select>
+                      <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                    </div>
+                  </Field>
+
+                  <Field label="PT Plan" required={addPt}>
+                    <div className="relative">
+                      <select
+                        value={selectedPtPlanId}
+                        onChange={(e) => handlePtPlanChange(e.target.value)}
+                        required={addPt}
+                        className={selectCls}
+                      >
+                        <option value="">Select a plan…</option>
+                        {ptPlans.map((plan) => (
+                          <option key={plan.id} value={plan.id}>
+                            {plan.name} — {plan.duration_months} month{plan.duration_months !== 1 ? 's' : ''} (₹{plan.fee})
+                          </option>
+                        ))}
+                      </select>
+                      <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                    </div>
+                  </Field>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <Field label="Start Date" required={addPt}>
+                      <div className="relative">
+                        <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+                        <input
+                          type="date"
+                          value={ptStartDate}
+                          onChange={(e) => setPtStartDate(e.target.value)}
+                          required={addPt}
+                          className={`${inputCls} pl-9`}
+                        />
+                      </div>
+                    </Field>
+                    <Field label="Amount (₹)" required={addPt}>
+                      <input
+                        type="number"
+                        value={ptAmount}
+                        onChange={(e) => setPtAmount(e.target.value)}
+                        required={addPt}
+                        min={0}
+                        step={0.01}
+                        placeholder="0"
+                        className={inputCls}
+                      />
+                    </Field>
+                  </div>
+
+                  {(() => {
+                    const plan = ptPlans.find((p) => p.id === selectedPtPlanId)
+                    if (!plan || parseFloat(ptAmount || '0') === plan.fee) return null
+                    return (
+                      <Field label={`Reason — amount differs from plan price (₹${plan.fee})`} required={addPt}>
+                        <input
+                          type="text"
+                          value={ptAmountNote}
+                          onChange={(e) => setPtAmountNote(e.target.value)}
+                          required={addPt}
+                          placeholder="e.g. discount applied"
+                          className={inputCls}
+                        />
+                      </Field>
+                    )
+                  })()}
+
+                  {selectedPtPlanId && ptPlans.length > 0 && (
+                    <div className="text-xs text-muted-foreground bg-muted/30 rounded-xl px-3 py-2 border border-border">
+                      {(() => {
+                        const plan = ptPlans.find((p) => p.id === selectedPtPlanId)
+                        if (!plan) return null
+                        const expiry = new Date(ptStartDate)
                         expiry.setMonth(expiry.getMonth() + plan.duration_months)
                         return (
                           <>
