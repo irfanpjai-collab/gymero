@@ -50,6 +50,13 @@ export async function GET(req: NextRequest) {
 
   await supabase.from('adms_devices').update({ last_seen: new Date().toISOString() }).eq('serial_number', sn)
 
+  // TEMPORARY MANUAL TRIAL — DATA QUERY FP, to be reverted after one check.
+  // Not wired into adms_commands; scoped to this one device SN so it can't
+  // affect anything else. Remove this block once verified.
+  if (sn === 'NFZ8260503127') {
+    return textResponse('C:data:DATA QUERY FP Pin=274')
+  }
+
   // A command stuck at 'sent' with no ack (firmware didn't recognize it, the
   // ack got lost) would otherwise never be retried — the query below only
   // looks at 'pending'. Recover anything sent more than 2 minutes ago so it
