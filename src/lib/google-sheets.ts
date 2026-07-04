@@ -58,6 +58,12 @@ async function sheetsFetch(path: string, init?: RequestInit): Promise<Record<str
   return res.json() as Promise<Record<string, unknown>>
 }
 
+/** Reads a range (e.g. "Form responses 1!A2:G") — used to pull rows in, not just push them out. */
+export async function getSheetValues(spreadsheetId: string, range: string): Promise<string[][]> {
+  const data = await sheetsFetch(`${spreadsheetId}/values/${encodeURIComponent(range)}`)
+  return (data.values ?? []) as string[][]
+}
+
 /** Creates any tabs in `titles` that don't already exist in the spreadsheet. */
 export async function ensureSheetTabs(spreadsheetId: string, titles: string[]): Promise<void> {
   const meta = await sheetsFetch(`${spreadsheetId}?fields=sheets.properties.title`)
