@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useEffect, useRef } from 'react'
+import { useState, useTransition } from 'react'
 import Link from 'next/link'
 import {
   Users,
@@ -11,19 +11,14 @@ import {
   Mail,
   ChevronDown,
   ChevronUp,
-  UserCheck,
-  UserPlus,
-  UserMinus,
-  Search,
   Dumbbell,
   Settings2,
 } from 'lucide-react'
-import { getCoaches, createCoach, getCoachMembers, assignMember, unassignMember } from '@/app/actions/coaches'
-import { getMembers } from '@/app/actions/members'
+import { getCoaches, createCoach } from '@/app/actions/coaches'
 import { getPtPlans, createPtPlan, getCoachPtClients, type PtClient } from '@/app/actions/pt'
 import { Badge } from '@/components/ui/badge'
 import { formatDate } from '@/lib/utils'
-import type { Coach, Member, PtPlan } from '@/types'
+import type { Coach, PtPlan } from '@/types'
 
 const inputCls =
   'w-full px-3 py-2.5 bg-background border border-border hover:border-border-bright focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/20 rounded-xl text-sm text-foreground placeholder:text-muted-foreground/50 transition-colors'
@@ -181,104 +176,6 @@ function AddPtPlanDialog({ open, onClose, onSuccess, plans }: { open: boolean; o
   )
 }
 
-// ─── Member search picker (shared by assign + sell-PT dialogs) ───────────────
-
-function MemberSearchPicker({ onSelect, excludeIds }: { onSelect: (member: Member) => void; excludeIds?: Set<string> }) {
-  const [query, setQuery] = useState('')
-  const [results, setResults] = useState<Member[]>([])
-  const [searching, setSearching] = useState(false)
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  // Debounce is driven from the onChange handler itself, not an effect keyed
-  // on `query` — this is a user-initiated search, not state sync with an
-  // external system, so it belongs in the event handler.
-  useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current) }, [])
-
-  const filtered = (excludeIds ? results.filter((m) => !excludeIds.has(m.id)) : results)
-  const hasQuery = query.trim().length > 0
-
-  function handleChange(value: string) {
-    setQuery(value)
-    if (debounceRef.current) clearTimeout(debounceRef.current)
-    if (!value.trim()) { setResults([]); setSearching(false); return }
-    setSearching(true)
-    debounceRef.current = setTimeout(async () => {
-      const data = await getMembers(value.trim())
-      setResults(data.slice(0, 8))
-      setSearching(false)
-    }, 300)
-  }
-
-  return (
-    <div className="space-y-2">
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/50 pointer-events-none" />
-        <input
-          type="text"
-          placeholder="Search by name, mobile, or member ID..."
-          value={query}
-          onChange={(e) => handleChange(e.target.value)}
-          className={`${inputCls} pl-9`}
-        />
-      </div>
-      {searching && (
-        <div className="flex items-center gap-2 text-muted-foreground text-xs py-2 justify-center">
-          <Loader2 className="w-3.5 h-3.5 animate-spin" />Searching…
-        </div>
-      )}
-      {!searching && hasQuery && filtered.length === 0 && (
-        <p className="text-muted-foreground/50 text-xs text-center py-2">No matching members.</p>
-      )}
-      {filtered.length > 0 && (
-        <div className="space-y-1.5 max-h-56 overflow-y-auto">
-          {filtered.map((m) => (
-            <button
-              key={m.id}
-              type="button"
-              onClick={() => onSelect(m)}
-              className="w-full flex items-center justify-between text-sm bg-muted/50 hover:bg-muted rounded-lg px-3 py-2 transition-colors text-left"
-            >
-              <span className="text-foreground font-medium">{m.full_name}</span>
-              <span className="text-muted-foreground text-xs">#{m.member_id} · {m.mobile}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ─── Assign member to coach ───────────────────────────────────────────────────
-
-function AssignMemberDialog({ open, onClose, onSuccess, coach, assignedIds }: {
-  open: boolean; onClose: () => void; onSuccess: () => void; coach: Coach; assignedIds: Set<string>
-}) {
-  const [isPending, startTransition] = useTransition()
-  const [error, setError] = useState('')
-
-  function handleSelect(member: Member) {
-    setError('')
-    startTransition(async () => {
-      const result = await assignMember(coach.id, member.id)
-      if (result.error) { setError(result.error); return }
-      onSuccess()
-    })
-  }
-
-  return (
-    <Modal open={open} onClose={onClose} title={`Assign Member to ${coach.name}`}>
-      {error && <p className="text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2 mb-4">{error}</p>}
-      {isPending ? (
-        <div className="flex items-center gap-2 text-muted-foreground text-sm py-4 justify-center">
-          <Loader2 className="w-4 h-4 animate-spin" />Assigning…
-        </div>
-      ) : (
-        <MemberSearchPicker onSelect={handleSelect} excludeIds={assignedIds} />
-      )}
-    </Modal>
-  )
-}
-
 // ─── Coach card ───────────────────────────────────────────────────────────────
 
 function CoachAvatar({ name }: { name: string }) {
@@ -297,22 +194,9 @@ function PtStatusBadge({ status }: { status: PtClient['status'] }) {
 }
 
 function CoachCard({ coach }: { coach: Coach }) {
-  const [membersOpen, setMembersOpen] = useState(false)
-  const [members, setMembers] = useState<Member[]>([])
-  const [membersLoading, setMembersLoading] = useState(false)
-  const [assignDialogOpen, setAssignDialogOpen] = useState(false)
-
   const [ptOpen, setPtOpen] = useState(false)
   const [ptClients, setPtClients] = useState<PtClient[]>([])
   const [ptLoading, setPtLoading] = useState(false)
-  const [, startTransition] = useTransition()
-
-  async function loadMembers() {
-    setMembersLoading(true)
-    const data = await getCoachMembers(coach.id)
-    setMembers(data)
-    setMembersLoading(false)
-  }
 
   async function loadPtClients() {
     setPtLoading(true)
@@ -321,33 +205,13 @@ function CoachCard({ coach }: { coach: Coach }) {
     setPtLoading(false)
   }
 
-  async function handleToggleMembers() {
-    if (!membersOpen) await loadMembers()
-    setMembersOpen((v) => !v)
-  }
-
   async function handleTogglePt() {
     if (!ptOpen) await loadPtClients()
     setPtOpen((v) => !v)
   }
 
-  function handleUnassign(memberId: string) {
-    startTransition(async () => {
-      await unassignMember(coach.id, memberId)
-      loadMembers()
-    })
-  }
-
   return (
     <div className="bg-card rounded-2xl border border-border p-5 shadow-card card-hover">
-      <AssignMemberDialog
-        open={assignDialogOpen}
-        onClose={() => setAssignDialogOpen(false)}
-        onSuccess={loadMembers}
-        coach={coach}
-        assignedIds={new Set(members.map((m) => m.id))}
-      />
-
       <div className="flex items-start gap-4">
         <CoachAvatar name={coach.name} />
         <div className="flex-1 min-w-0">
@@ -377,64 +241,14 @@ function CoachCard({ coach }: { coach: Coach }) {
         </div>
       </div>
 
-      {/* Members section */}
-      <div className="mt-4 grid grid-cols-2 gap-2">
-        <button
-          onClick={handleToggleMembers}
-          className="flex items-center justify-center gap-2 px-3 py-2 bg-muted hover:bg-border border border-border hover:border-border-bright text-muted-foreground hover:text-foreground rounded-xl text-xs font-medium transition-colors"
-        >
-          <UserCheck className="w-3.5 h-3.5" />
-          Members
-          {membersOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-        </button>
-        <button
-          onClick={handleTogglePt}
-          className="flex items-center justify-center gap-2 px-3 py-2 bg-muted hover:bg-border border border-border hover:border-border-bright text-muted-foreground hover:text-foreground rounded-xl text-xs font-medium transition-colors"
-        >
-          <Dumbbell className="w-3.5 h-3.5" />
-          PT Clients
-          {ptOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-        </button>
-      </div>
-
-      {membersOpen && (
-        <div className="mt-3 border-t border-border pt-3 space-y-2">
-          <button
-            onClick={() => setAssignDialogOpen(true)}
-            className="w-full flex items-center justify-center gap-1.5 text-xs bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded-lg px-3 py-2 font-medium transition-colors"
-          >
-            <UserPlus className="w-3.5 h-3.5" />
-            Assign Member
-          </button>
-          {membersLoading ? (
-            <div className="flex items-center gap-2 text-muted-foreground text-xs py-2 justify-center">
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />Loading members…
-            </div>
-          ) : members.length === 0 ? (
-            <p className="text-muted-foreground/50 text-xs text-center py-2">No members assigned yet.</p>
-          ) : (
-            <div className="space-y-2">
-              {members.map((m) => (
-                <div key={m.id} className="flex items-center justify-between text-xs bg-muted/50 rounded-lg px-3 py-2">
-                  <Link href={`/members/${m.id}`} className="text-foreground font-medium hover:text-primary hover:underline transition-colors">
-                    {m.full_name}
-                  </Link>
-                  <div className="flex items-center gap-2">
-                    <span className="text-muted-foreground">#{m.member_id} · {m.mobile}</span>
-                    <button
-                      onClick={() => handleUnassign(m.id)}
-                      title="Unassign"
-                      className="text-muted-foreground hover:text-red-400 transition-colors"
-                    >
-                      <UserMinus className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      <button
+        onClick={handleTogglePt}
+        className="mt-4 w-full flex items-center justify-center gap-2 px-3 py-2 bg-muted hover:bg-border border border-border hover:border-border-bright text-muted-foreground hover:text-foreground rounded-xl text-xs font-medium transition-colors"
+      >
+        <Dumbbell className="w-3.5 h-3.5" />
+        PT Clients
+        {ptOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+      </button>
 
       {ptOpen && (
         <div className="mt-3 border-t border-border pt-3 space-y-2">
