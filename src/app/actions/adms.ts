@@ -190,7 +190,19 @@ export async function getMemberAdmsInfo(memberId: string): Promise<MemberAdmsInf
       .limit(1)
       .maybeSingle()
 
-    const enrolled = checkIns.length > 0 || (lastCommand?.operation === 'enroll' && lastCommand.status === 'done')
+    // Strongest signal first: the device itself confirmed a valid fingerprint
+    // template via its OPERLOG push (see cdata/route.ts) — direct proof, not
+    // an inference. Falls back to the older heuristics when that's absent
+    // (e.g. enrolled before this table existed).
+    const { data: fingerprint } = await supabase
+      .from('adms_fingerprints')
+      .select('valid')
+      .eq('device_user_id', String(member.member_id))
+      .eq('valid', true)
+      .limit(1)
+      .maybeSingle()
+
+    const enrolled = !!fingerprint || checkIns.length > 0 || (lastCommand?.operation === 'enroll' && lastCommand.status === 'done')
 
     return { enrolled, checkIns }
   } catch (err) {
@@ -241,6 +253,7 @@ export async function getBiometricPageData(dateStr?: string): Promise<BiometricP
       { data: commands, error: commandsErr },
       { data: doneCommands },
       { data: punches },
+      { data: fingerprints },
     ] = await Promise.all([
       supabase.from('adms_devices').select('*').order('last_seen', { ascending: false }),
       supabase
@@ -260,6 +273,7 @@ export async function getBiometricPageData(dateStr?: string): Promise<BiometricP
       supabase.from('adms_commands').select('*').order('created_at', { ascending: false }).limit(50),
       supabase.from('adms_commands').select('member_id, operation, created_at').eq('status', 'done').order('created_at', { ascending: true }),
       supabase.from('attendance_logs').select('device_user_id'),
+      supabase.from('adms_fingerprints').select('device_user_id').eq('valid', true),
     ])
     if (devicesErr) throw devicesErr
     if (attErr) throw attErr
@@ -304,10 +318,14 @@ export async function getBiometricPageData(dateStr?: string): Promise<BiometricP
       }
     })
 
-    // "Enrolled" is true if the member has ever punched in, or their most
-    // recent completed enroll/remove command was an enroll. "Blocked"
-    // reflects the most recent completed block/unblock command; defaults to
-    // unblocked if neither ever ran.
+    // "Enrolled" is true if the device confirmed a valid fingerprint template
+    // (direct signal via OPERLOG push — see cdata/route.ts), the member has
+    // ever punched in, or their most recent completed enroll/remove command
+    // was an enroll. "Blocked" reflects the most recent completed
+    // block/unblock command; defaults to unblocked if neither ever ran.
+    const hasFingerprint = new Set(
+      (fingerprints ?? []).map(f => Number(f.device_user_id)).filter(n => !Number.isNaN(n))
+    )
     const everPunched = new Set(
       (punches ?? []).map(a => Number(a.device_user_id)).filter(n => !Number.isNaN(n))
     )
@@ -321,6 +339,7 @@ export async function getBiometricPageData(dateStr?: string): Promise<BiometricP
       }
     }
     const statusMemberIds = new Set([
+      ...hasFingerprint,
       ...everPunched,
       ...Object.keys(latestEnrollRemove).map(Number),
       ...Object.keys(latestBlockUnblock).map(Number),
@@ -328,7 +347,7 @@ export async function getBiometricPageData(dateStr?: string): Promise<BiometricP
     const admsStatus: Record<number, MemberAdmsStatus> = {}
     for (const id of statusMemberIds) {
       admsStatus[id] = {
-        enrolled: everPunched.has(id) || latestEnrollRemove[id] === 'enroll',
+        enrolled: hasFingerprint.has(id) || everPunched.has(id) || latestEnrollRemove[id] === 'enroll',
         blocked: latestBlockUnblock[id] === 'block',
       }
     }

@@ -104,7 +104,37 @@ export async function POST(req: NextRequest) {
     return textResponse(`OK: ${processed}`)
   }
 
-  // OPERLOG (user/fingerprint/face uploads) — not consumed for now; just
-  // acknowledge so the device doesn't keep retrying.
+  if (table === 'OPERLOG') {
+    // Confirmed via live device test: a fingerprint enrollment shows up here
+    // as "FP PIN=x\tFID=y\tSize=z\tValid=1\tTMP=<template>". This is the only
+    // reliable signal that a template actually exists — there's no working
+    // remote query command for this firmware (DATA QUERY FP → Return=-1004).
+    // The template blob itself isn't stored, only existence/validity.
+    const lines = body.split(/\r\n|\r|\n/).filter(Boolean)
+    for (const line of lines) {
+      const fields = line.split('\t')
+      if (!fields[0]?.startsWith('FP PIN=')) continue
+
+      const pin = fields[0].slice('FP PIN='.length).trim()
+      const fidField = fields.find(f => f.startsWith('FID='))
+      const validField = fields.find(f => f.startsWith('Valid='))
+      const fid = fidField ? parseInt(fidField.slice('FID='.length), 10) : NaN
+      if (!pin || Number.isNaN(fid)) continue
+
+      const { error: fpErr } = await supabase.from('adms_fingerprints').upsert(
+        {
+          device_user_id: pin,
+          fid,
+          valid: validField?.slice('Valid='.length) === '1',
+          enrolled_at: new Date().toISOString(),
+        },
+        { onConflict: 'device_user_id,fid' }
+      )
+      if (fpErr) console.error('adms cdata: fingerprint upsert failed —', fpErr.message)
+    }
+  }
+
+  // Everything else in OPERLOG (USER records, OPLOG audit entries, face data)
+  // isn't consumed — just acknowledge so the device doesn't keep retrying.
   return textResponse('OK')
 }
