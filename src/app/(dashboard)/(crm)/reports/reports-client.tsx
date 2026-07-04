@@ -24,12 +24,14 @@ export default function ReportsClient({
   initialTotalSalaryPaid,
   initialTotalExpensesPaid,
   initialMonthlyRevenue,
+  gracePeriodDays,
 }: {
   initialMembers: Member[]
   initialPayments: Payment[]
   initialTotalSalaryPaid: number
   initialTotalExpensesPaid: number
   initialMonthlyRevenue: { month: string; revenue: number }[]
+  gracePeriodDays: number
 }) {
   const [tab, setTab] = useState<TabType>('Members')
   const members = initialMembers
@@ -38,9 +40,9 @@ export default function ReportsClient({
   const totalExpensesPaid = initialTotalExpensesPaid
   const monthlyRevenue = initialMonthlyRevenue
 
-  const active = members.filter(m => m.active_membership && getMembershipStatus(m.active_membership.expiry_date) === 'active')
-  const expired = members.filter(m => !m.active_membership || getMembershipStatus(m.active_membership.expiry_date) === 'expired')
-  const expiringSoon = members.filter(m => m.active_membership && getMembershipStatus(m.active_membership.expiry_date) === 'expiring_soon')
+  const active = members.filter(m => m.active_membership && getMembershipStatus(m.active_membership.expiry_date, gracePeriodDays) === 'active')
+  const expired = members.filter(m => !m.active_membership || getMembershipStatus(m.active_membership.expiry_date, gracePeriodDays) === 'expired')
+  const expiringSoon = members.filter(m => m.active_membership && getMembershipStatus(m.active_membership.expiry_date, gracePeriodDays) === 'expiring_soon')
   const totalRevenue = payments.reduce((s, p) => s + p.amount, 0)
   const netProfit = totalRevenue - totalSalaryPaid - totalExpensesPaid
 
@@ -53,7 +55,7 @@ export default function ReportsClient({
       'Gender': m.gender,
       'Join Date': formatDate(m.join_date),
       'Expiry Date': m.active_membership ? formatDate(m.active_membership.expiry_date) : 'N/A',
-      'Status': m.active_membership ? getMembershipStatus(m.active_membership.expiry_date) : 'No Plan',
+      'Status': m.active_membership ? getMembershipStatus(m.active_membership.expiry_date, gracePeriodDays) : 'No Plan',
     })), 'members-report')
   }
 
@@ -125,7 +127,7 @@ export default function ReportsClient({
                 </thead>
                 <tbody>
                   {members.slice(0, 50).map(m => {
-                    const status = m.active_membership ? getMembershipStatus(m.active_membership.expiry_date) : 'no_plan'
+                    const status = m.active_membership ? getMembershipStatus(m.active_membership.expiry_date, gracePeriodDays) : 'no_plan'
                     const statusColors: Record<string, string> = {
                       active: 'text-emerald-400',
                       expiring_soon: 'text-amber-400',

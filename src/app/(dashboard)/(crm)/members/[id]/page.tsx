@@ -23,6 +23,7 @@ import { getMember } from '@/app/actions/members'
 import { getPayments } from '@/app/actions/payments'
 import { getMemberAdmsInfo } from '@/app/actions/adms'
 import { getMemberPt } from '@/app/actions/pt'
+import { getCachedGracePeriodDays } from '@/lib/cached-queries'
 import { formatDate, formatCurrency, getMembershipStatus, getStatusColor, getDaysUntilExpiry, getDaysSinceExpiry } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import RenewDialog from './renew-dialog'
@@ -99,17 +100,18 @@ export default async function MemberDetailPage({
   const { id } = await params
   const { renew } = await searchParams
 
-  const [member, payments, biometric, pt] = await Promise.all([
+  const [member, payments, biometric, pt, gracePeriodDays] = await Promise.all([
     getMember(id),
     getPayments(id),
     getMemberAdmsInfo(id),
     getMemberPt(id),
+    getCachedGracePeriodDays(),
   ])
 
   if (!member) notFound()
 
   const membership = member.active_membership ?? null
-  const membershipStatus = membership ? getMembershipStatus(membership.expiry_date) : null
+  const membershipStatus = membership ? getMembershipStatus(membership.expiry_date, gracePeriodDays) : null
   const daysLeft = membership ? getDaysUntilExpiry(membership.expiry_date) : null
   const statusColors = membershipStatus ? getStatusColor(membershipStatus) : getStatusColor('expired')
   const statusLabel =
@@ -127,15 +129,15 @@ export default async function MemberDetailPage({
   let graceBanner = null
   if (membership && membershipStatus === 'grace_period') {
     const daysSince = getDaysSinceExpiry(membership.expiry_date)
-    const daysLeftGrace = 180 - daysSince
+    const daysLeftGrace = gracePeriodDays - daysSince
     graceBanner = (
       <div className="bg-orange-500/10 border border-orange-500/20 rounded-2xl p-4 flex items-start gap-3">
         <Clock className="w-5 h-5 text-orange-400 flex-shrink-0 mt-0.5" />
         <div>
           <h4 className="text-sm font-semibold text-foreground">Grace Period Active</h4>
           <p className="text-xs text-orange-300 mt-1">
-            This member's membership expired on {formatDate(membership.expiry_date)} ({daysSince} days ago). 
-            They are within the 180-day grace period and have <strong>{daysLeftGrace} days left</strong> to renew without paying the admission fee again.
+            This member's membership expired on {formatDate(membership.expiry_date)} ({daysSince} days ago).
+            They are within the {gracePeriodDays}-day grace period and have <strong>{daysLeftGrace} days left</strong> to renew without paying the admission fee again.
           </p>
         </div>
       </div>
@@ -148,8 +150,8 @@ export default async function MemberDetailPage({
         <div>
           <h4 className="text-sm font-semibold text-foreground">Membership Lapsed</h4>
           <p className="text-xs text-red-300 mt-1">
-            This member's membership expired on {formatDate(membership.expiry_date)} ({daysSince} days ago). 
-            Since it has been more than 180 days, the grace period has expired. They must pay the <strong>admission fee</strong> to rejoin.
+            This member's membership expired on {formatDate(membership.expiry_date)} ({daysSince} days ago).
+            Since it has been more than {gracePeriodDays} days, the grace period has expired. They must pay the <strong>admission fee</strong> to rejoin.
           </p>
         </div>
       </div>

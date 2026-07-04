@@ -12,6 +12,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { renewMembership, getPlans, getLastMembershipExpiry } from '@/app/actions/memberships'
+import { getGracePeriodDays } from '@/app/actions/settings'
 import type { MembershipPlan } from '@/types'
 import { differenceInDays, parseISO, addDays, format } from 'date-fns'
 
@@ -64,14 +65,17 @@ export default function RenewDialog({
   const [daysSince, setDaysSince] = useState<number | null>(null)
   const [paymentMethod, setPaymentMethod] = useState('cash')
 
-  // Load default settings from local storage
+  // Admission fee default is still a per-browser localStorage suggestion
+  // (staff can always override it per entry). Grace period is authoritative
+  // from the server — it drives real status classification elsewhere in the
+  // app, so a stale per-browser localStorage copy isn't good enough here.
   useEffect(() => {
     const saved = localStorage.getItem('gym_settings')
     if (saved) {
       const parsed = JSON.parse(saved)
       if (parsed.admissionFee !== undefined) setDefaultAdmissionFee(Number(parsed.admissionFee))
-      if (parsed.gracePeriodDays !== undefined) setGracePeriodDays(Number(parsed.gracePeriodDays))
     }
+    getGracePeriodDays().then(setGracePeriodDays)
   }, [])
 
   useEffect(() => {

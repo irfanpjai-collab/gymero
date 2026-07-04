@@ -5,6 +5,7 @@ import { Settings, CreditCard, Users, Save, Building, Loader2, Trash2, KeyRound 
 import { toast } from 'sonner'
 import { getPlans, createPlan, updatePlan } from '@/app/actions/memberships'
 import { createStaffUser, deleteStaffUser, resetStaffPassword } from '@/app/actions/staff'
+import { getGracePeriodDays, updateGracePeriodDays } from '@/app/actions/settings'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
@@ -64,9 +65,13 @@ export default function SettingsPage() {
         ...s,
         ...parsed,
         admissionFee: parsed.admissionFee !== undefined ? Number(parsed.admissionFee) : 600,
-        gracePeriodDays: parsed.gracePeriodDays !== undefined ? Number(parsed.gracePeriodDays) : 180,
       }))
     }
+    // Grace period is server-authoritative (it drives real status
+    // classification on Dashboard/Members/Reports) — overrides whatever
+    // localStorage had, since that was only ever a per-browser leftover from
+    // before this was persisted properly.
+    getGracePeriodDays().then((days) => setSettings(s => ({ ...s, gracePeriodDays: days })))
     getPlans().then(setPlans)
     fetchUsers()
 
@@ -129,8 +134,13 @@ export default function SettingsPage() {
     setCreatingUser(false)
   }
 
-  function saveSettings() {
+  async function saveSettings() {
     localStorage.setItem('gym_settings', JSON.stringify(settings))
+    const result = await updateGracePeriodDays(settings.gracePeriodDays)
+    if (result.error) {
+      toast.error(`Grace period failed to save: ${result.error}`)
+      return
+    }
     toast.success('Settings saved')
   }
 

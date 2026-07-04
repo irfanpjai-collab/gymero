@@ -11,7 +11,7 @@ import {
   ChevronRight,
   UserX,
 } from 'lucide-react'
-import { getCachedMembers, getCachedLastCheckIns } from '@/lib/cached-queries'
+import { getCachedMembers, getCachedLastCheckIns, getCachedGracePeriodDays } from '@/lib/cached-queries'
 import { formatDate, formatDateTime, getMembershipStatus, getStatusColor } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import SyncFormIntakeButton from './sync-form-intake-button'
@@ -27,7 +27,7 @@ type SearchParams = Promise<{
 
 // ─── Status badge ────────────────────────────────────────────────────────────
 
-function StatusBadge({ member }: { member: Member }) {
+function StatusBadge({ member, gracePeriodDays }: { member: Member; gracePeriodDays: number }) {
   if (!member.active_membership) {
     return (
       <Badge className="border text-xs text-muted-foreground bg-muted border-border">
@@ -35,7 +35,7 @@ function StatusBadge({ member }: { member: Member }) {
       </Badge>
     )
   }
-  const status = getMembershipStatus(member.active_membership.expiry_date)
+  const status = getMembershipStatus(member.active_membership.expiry_date, gracePeriodDays)
   const colors = getStatusColor(status)
   const label =
     status === 'active'
@@ -97,15 +97,16 @@ async function MembersTable({
   statusFilter?: string
   page: number
 }) {
-  const [allMembers, lastCheckIns] = await Promise.all([
+  const [allMembers, lastCheckIns, gracePeriodDays] = await Promise.all([
     getCachedMembers(search),
     getCachedLastCheckIns(),
+    getCachedGracePeriodDays(),
   ])
 
   const filtered = allMembers.filter((m) => {
     if (!statusFilter || statusFilter === 'all') return true
     if (!m.active_membership) return statusFilter === 'expired'
-    const status = getMembershipStatus(m.active_membership.expiry_date)
+    const status = getMembershipStatus(m.active_membership.expiry_date, gracePeriodDays)
     if (statusFilter === 'active') return status === 'active'
     if (statusFilter === 'expiring') return status === 'expiring_soon'
     if (statusFilter === 'grace') return status === 'grace_period'
@@ -119,22 +120,22 @@ async function MembersTable({
 
   const totalCount = allMembers.length
   const activeCount = allMembers.filter(
-    (m) => m.active_membership && getMembershipStatus(m.active_membership.expiry_date) === 'active'
+    (m) => m.active_membership && getMembershipStatus(m.active_membership.expiry_date, gracePeriodDays) === 'active'
   ).length
   const expiringCount = allMembers.filter(
     (m) =>
       m.active_membership &&
-      getMembershipStatus(m.active_membership.expiry_date) === 'expiring_soon'
+      getMembershipStatus(m.active_membership.expiry_date, gracePeriodDays) === 'expiring_soon'
   ).length
   const graceCount = allMembers.filter(
     (m) =>
       m.active_membership &&
-      getMembershipStatus(m.active_membership.expiry_date) === 'grace_period'
+      getMembershipStatus(m.active_membership.expiry_date, gracePeriodDays) === 'grace_period'
   ).length
   const expiredCount = allMembers.filter(
     (m) =>
       !m.active_membership ||
-      getMembershipStatus(m.active_membership.expiry_date) === 'expired'
+      getMembershipStatus(m.active_membership.expiry_date, gracePeriodDays) === 'expired'
   ).length
 
   const activeTab = statusFilter || 'all'
@@ -221,7 +222,7 @@ async function MembersTable({
                         <td className="px-4 py-3.5 text-muted-foreground">{member.mobile}</td>
                         <td className="px-4 py-3.5 text-muted-foreground capitalize">{member.gender}</td>
                         <td className="px-4 py-3.5 text-muted-foreground whitespace-nowrap">{formatDate(member.join_date)}</td>
-                        <td className="px-4 py-3.5"><StatusBadge member={member} /></td>
+                        <td className="px-4 py-3.5"><StatusBadge member={member} gracePeriodDays={gracePeriodDays} /></td>
                         <td className="px-4 py-3.5 text-muted-foreground whitespace-nowrap">
                           {expiryDate ? formatDate(expiryDate) : '—'}
                         </td>

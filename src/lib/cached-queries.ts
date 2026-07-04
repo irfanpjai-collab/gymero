@@ -1,5 +1,6 @@
 import { unstable_cache } from 'next/cache'
 import { createAdminClient } from './supabase/admin'
+import { DEFAULT_GRACE_PERIOD_DAYS } from './utils'
 import type { Member, DashboardStats } from '@/types'
 
 // Cached DB reads using the admin (service-role) client so they can run
@@ -9,6 +10,20 @@ import type { Member, DashboardStats } from '@/types'
 function escapePostgrestValue(value: string): string {
   return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
 }
+
+// ── Settings ─────────────────────────────────────────────────────────────────
+
+const _getGracePeriodDays = async (): Promise<number> => {
+  const supabase = createAdminClient()
+  const { data } = await supabase.from('app_settings').select('grace_period_days').eq('id', 1).maybeSingle()
+  return data?.grace_period_days ?? DEFAULT_GRACE_PERIOD_DAYS
+}
+
+export const getCachedGracePeriodDays = unstable_cache(
+  _getGracePeriodDays,
+  ['grace-period-days'],
+  { tags: ['settings'], revalidate: 300 }
+)
 
 // ── Members ──────────────────────────────────────────────────────────────────
 
@@ -55,11 +70,12 @@ export const getCachedMembers = unstable_cache(
 
 const _getDashboardStats = async (): Promise<DashboardStats> => {
   const supabase = createAdminClient()
+  const gracePeriodDays = await _getGracePeriodDays()
   const today = new Date()
   const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10)
   const todayStr = today.toISOString().slice(0, 10)
   const weekAheadStr = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-  const gracePeriodStart = new Date(today.getTime() - 180 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const gracePeriodStart = new Date(today.getTime() - gracePeriodDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
   const [
     totalMembersRes, activeMembersRes, expiredMembersRes, gracePeriodRes,
@@ -93,7 +109,7 @@ const _getDashboardStats = async (): Promise<DashboardStats> => {
 export const getCachedDashboardStats = unstable_cache(
   _getDashboardStats,
   ['dashboard-stats'],
-  { tags: ['members', 'payments'], revalidate: 300 }
+  { tags: ['members', 'payments', 'settings'], revalidate: 300 }
 )
 
 // ── Grace period members ─────────────────────────────────────────────────────
@@ -102,8 +118,9 @@ const _getGracePeriodMembers = async (
   limit = 10
 ): Promise<(Member & { expiry_date: string; days_since_expiry: number })[]> => {
   const supabase = createAdminClient()
+  const gracePeriodDays = await _getGracePeriodDays()
   const todayStr = new Date().toISOString().slice(0, 10)
-  const gracePeriodStart = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const gracePeriodStart = new Date(Date.now() - gracePeriodDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
   const { data, error } = await supabase
     .from('memberships')
@@ -129,7 +146,7 @@ const _getGracePeriodMembers = async (
 export const getCachedGracePeriodMembers = unstable_cache(
   _getGracePeriodMembers,
   ['grace-period-members'],
-  { tags: ['members'], revalidate: 300 }
+  { tags: ['members', 'settings'], revalidate: 300 }
 )
 
 // ── Expiring members ─────────────────────────────────────────────────────────
