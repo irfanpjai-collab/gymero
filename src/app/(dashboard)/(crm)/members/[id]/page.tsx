@@ -29,6 +29,7 @@ import { Badge } from '@/components/ui/badge'
 import RenewDialog from './renew-dialog'
 import { PtDialog, CancelPtButton } from './pt-dialog'
 import EditExpiryDialog from './edit-expiry-dialog'
+import AddJoinDateDialog from './add-join-date-dialog'
 import type { Payment } from '@/types'
 
 const PUNCH_LABELS: Record<number, string> = {
@@ -220,7 +221,11 @@ export default async function MemberDetailPage({
             <InfoRow icon={Mail} label="Email" value={member.email || '—'} />
             <InfoRow icon={MapPin} label="Address" value={member.address || '—'} />
             <InfoRow icon={User} label="Gender" value={genderLabel} />
-            <InfoRow icon={Calendar} label="Date Joined" value={member.join_date ? formatDate(member.join_date) : '—'} />
+            <InfoRow
+              icon={Calendar}
+              label="Date Joined"
+              value={member.join_date ? formatDate(member.join_date) : <AddJoinDateDialog memberId={id} />}
+            />
             <InfoRow icon={CreditCard} label="Admission Fee Paid" value={member.admission_fee ? formatCurrency(member.admission_fee) : '—'} />
             {member.notes && (
               <InfoRow icon={FileText} label="Notes" value={member.notes} />
