@@ -36,6 +36,12 @@ function MethodBadge({ method }: { method: string }) {
   return <Badge variant="secondary" className="capitalize">{method}</Badge>
 }
 
+function TypeBadge({ type }: { type?: string }) {
+  if (type === 'admission') return <Badge variant="info" className="capitalize">Admission</Badge>
+  if (type === 'personal_training') return <Badge variant="purple">Personal Training</Badge>
+  return <Badge variant="success" className="capitalize">Membership</Badge>
+}
+
 function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
   return (
     <div className="space-y-1.5">
@@ -340,7 +346,7 @@ export default function PaymentsClient({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border">
-                  {['Date', 'Member', 'Amount', 'Method', 'Receipt #', ''].map((h) => (
+                  {['Date', 'Member', 'Type', 'Plan', 'Amount', 'Method', 'Receipt #', ''].map((h) => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                       {h}
                     </th>
@@ -362,6 +368,12 @@ export default function PaymentsClient({
                         )}
                         <p className="text-xs text-muted-foreground">#{p.member?.member_id}</p>
                       </div>
+                    </td>
+                    <td className="px-4 py-3"><TypeBadge type={p.payment_type} /></td>
+                    <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
+                      {p.membership?.plan
+                        ? `${p.membership.plan.name} (${p.membership.plan.duration_months}mo)`
+                        : '—'}
                     </td>
                     <td className="px-4 py-3 font-semibold text-foreground whitespace-nowrap">{formatCurrency(p.amount)}</td>
                     <td className="px-4 py-3"><MethodBadge method={p.payment_method} /></td>

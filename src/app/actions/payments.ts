@@ -16,6 +16,9 @@ export async function getPayments(memberId?: string): Promise<Payment[]> {
         *,
         member:members!payments_member_id_fkey(
           id, full_name, member_id
+        ),
+        membership:memberships!payments_membership_id_fkey(
+          id, plan:membership_plans(name, duration_months)
         )
       `)
       .order('payment_date', { ascending: false })
