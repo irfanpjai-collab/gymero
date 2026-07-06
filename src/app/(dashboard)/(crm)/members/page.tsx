@@ -2,7 +2,6 @@ import Link from 'next/link'
 import { Suspense } from 'react'
 import {
   Users,
-  Search,
   Plus,
   Upload,
   Eye,
@@ -15,6 +14,7 @@ import { getCachedMembers, getCachedLastCheckIns, getCachedGracePeriodDays } fro
 import { formatDate, formatDateTime, getMembershipStatus, getStatusColor } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import SyncFormIntakeButton from './sync-form-intake-button'
+import MembersSearchInput from './search-input'
 import type { Member } from '@/types'
 
 const PAGE_SIZE = 20
@@ -341,20 +341,8 @@ export default async function MembersPage({ searchParams }: { searchParams: Sear
         </div>
       </div>
 
-      {/* Search bar */}
-      <form method="GET" action="/members">
-        {status && <input type="hidden" name="status" value={status} />}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/50 pointer-events-none" />
-          <input
-            type="text"
-            name="search"
-            defaultValue={search}
-            placeholder="Search by name, mobile, or member ID..."
-            className="w-full pl-10 pr-4 py-2.5 bg-card border border-border hover:border-border-bright focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/20 rounded-xl text-sm text-foreground placeholder:text-muted-foreground/50 transition-colors"
-          />
-        </div>
-      </form>
+      {/* Search bar — filters live as you type, no Enter needed */}
+      <MembersSearchInput initialSearch={search} />
 
       {/* Table with filter tabs */}
       <Suspense
