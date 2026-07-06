@@ -19,6 +19,9 @@ export async function getPayments(memberId?: string): Promise<Payment[]> {
         ),
         membership:memberships!payments_membership_id_fkey(
           id, plan:membership_plans(name, duration_months)
+        ),
+        pt_membership:pt_memberships!payments_pt_membership_id_fkey(
+          id, plan:pt_plans(name, duration_months)
         )
       `)
       .order('payment_date', { ascending: false })
@@ -36,6 +39,23 @@ export async function getPayments(memberId?: string): Promise<Payment[]> {
   } catch (err) {
     console.error('getPayments error:', err)
     return []
+  }
+}
+
+// getPayments() is capped at 100 rows for the transaction list display — but
+// "Total Collected" and similar all-time stats must never be derived from
+// that capped list, or they silently understate reality once a gym passes
+// 100 lifetime payments. This fetches only the amount column, unlimited.
+export async function getPaymentsSummary(): Promise<{ totalRevenue: number; totalCount: number }> {
+  try {
+    const supabase = await createClient()
+    const { data, error } = await supabase.from('payments').select('amount')
+    if (error) throw error
+    const rows = (data ?? []) as { amount: number }[]
+    return { totalRevenue: rows.reduce((s, r) => s + r.amount, 0), totalCount: rows.length }
+  } catch (err) {
+    console.error('getPaymentsSummary error:', err)
+    return { totalRevenue: 0, totalCount: 0 }
   }
 }
 

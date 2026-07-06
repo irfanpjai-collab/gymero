@@ -64,6 +64,7 @@ export interface Payment {
   created_at: string
   member?: Member
   membership?: Membership
+  pt_membership?: { id: string; plan?: { name: string; duration_months: number } }
 }
 
 export interface Coach {

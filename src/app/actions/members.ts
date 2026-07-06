@@ -381,6 +381,19 @@ export async function importMembers(
         } else {
           const planId = row.plan_name ? planMap[row.plan_name.toLowerCase()] : null
 
+          // If this row matched an existing member (re-import/bulk update),
+          // expire their current active membership first — same invariant
+          // renewMembership() enforces — so this import can't leave two
+          // simultaneously 'active' rows for one member, which would confuse
+          // WhatsApp due-date messaging and any status count keyed on it.
+          if (!insertedMember) {
+            await supabase
+              .from('memberships')
+              .update({ status: 'expired' })
+              .eq('member_id', memberId)
+              .eq('status', 'active')
+          }
+
           const membershipPayload: Record<string, unknown> = {
             member_id: memberId,
             expiry_date: row.expiry_date,

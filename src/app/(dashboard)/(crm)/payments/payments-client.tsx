@@ -14,7 +14,7 @@ import {
   Search,
   FileText,
 } from 'lucide-react'
-import { getPayments, getMonthlyRevenue, recordPayment } from '@/app/actions/payments'
+import { getPayments, getMonthlyRevenue, getPaymentsSummary, recordPayment } from '@/app/actions/payments'
 import { getMembers } from '@/app/actions/members'
 import { formatDate, formatCurrency } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
@@ -250,29 +250,36 @@ const METHOD_FILTERS = [
 export default function PaymentsClient({
   initialPayments,
   initialMonthlyRevenue,
+  initialSummary,
 }: {
   initialPayments: Payment[]
   initialMonthlyRevenue: { month: string; revenue: number }[]
+  initialSummary: { totalRevenue: number; totalCount: number }
 }) {
   const [payments, setPayments] = useState<Payment[]>(initialPayments)
   const [monthlyRevenue, setMonthlyRevenue] = useState<{ month: string; revenue: number }[]>(initialMonthlyRevenue)
+  const [summary, setSummary] = useState(initialSummary)
   const [loading, setLoading] = useState(false)
   const [methodFilter, setMethodFilter] = useState('')
   const [dialogOpen, setDialogOpen] = useState(false)
 
   async function load() {
     setLoading(true)
-    const [p, mr] = await Promise.all([getPayments(), getMonthlyRevenue()])
+    const [p, mr, s] = await Promise.all([getPayments(), getMonthlyRevenue(), getPaymentsSummary()])
     setPayments(p)
     setMonthlyRevenue(mr)
+    setSummary(s)
     setLoading(false)
   }
 
   const today = new Date().toISOString().slice(0, 10)
+  // Today's payments are always within the most recent 100 rows in practice,
+  // so deriving this from the (capped) list is safe — but total/all-time
+  // figures below must come from the unlimited summary query instead.
   const todayRevenue = payments.filter((p) => p.payment_date === today).reduce((s, p) => s + p.amount, 0)
   const thisMonth = new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
   const monthRevenue = monthlyRevenue.find((m) => m.month === thisMonth)?.revenue ?? 0
-  const totalRevenue = payments.reduce((s, p) => s + p.amount, 0)
+  const totalRevenue = summary.totalRevenue
 
   const filtered = methodFilter ? payments.filter((p) => p.payment_method === methodFilter) : payments
 
@@ -288,7 +295,7 @@ export default function PaymentsClient({
           </div>
           <div>
             <h1 className="text-xl font-bold text-foreground">Payments</h1>
-            <p className="text-muted-foreground text-xs">{payments.length} total records</p>
+            <p className="text-muted-foreground text-xs">{summary.totalCount} total records</p>
           </div>
         </div>
         <button
@@ -373,6 +380,8 @@ export default function PaymentsClient({
                     <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
                       {p.membership?.plan
                         ? `${p.membership.plan.name} (${p.membership.plan.duration_months}mo)`
+                        : p.pt_membership?.plan
+                        ? `${p.pt_membership.plan.name} (${p.pt_membership.plan.duration_months}mo)`
                         : '—'}
                     </td>
                     <td className="px-4 py-3 font-semibold text-foreground whitespace-nowrap">{formatCurrency(p.amount)}</td>

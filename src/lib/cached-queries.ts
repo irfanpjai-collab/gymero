@@ -1,6 +1,6 @@
 import { unstable_cache } from 'next/cache'
 import { createAdminClient } from './supabase/admin'
-import { DEFAULT_GRACE_PERIOD_DAYS } from './utils'
+import { DEFAULT_GRACE_PERIOD_DAYS, getMembershipStatus } from './utils'
 import type { Member, DashboardStats } from '@/types'
 
 // Cached DB reads using the admin (service-role) client so they can run
@@ -74,35 +74,51 @@ const _getDashboardStats = async (): Promise<DashboardStats> => {
   const today = new Date()
   const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10)
   const todayStr = today.toISOString().slice(0, 10)
-  const weekAheadStr = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-  const gracePeriodStart = new Date(today.getTime() - gracePeriodDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
   const [
-    totalMembersRes, activeMembersRes, expiredMembersRes, gracePeriodRes,
-    expiringThisWeekRes, revenueRes, admissionFeeRes, dueTodayRes,
+    totalMembersRes, allMembershipsRes, revenueRes, admissionFeeRes,
   ] = await Promise.all([
     supabase.from('members').select('id', { count: 'exact', head: true }).is('deleted_at', null),
-    supabase.from('memberships').select('id', { count: 'exact', head: true }).eq('status', 'active').gte('expiry_date', todayStr),
-    supabase.from('memberships').select('id', { count: 'exact', head: true }).neq('status', 'cancelled').lt('expiry_date', gracePeriodStart),
-    supabase.from('memberships').select('id', { count: 'exact', head: true }).neq('status', 'cancelled').gte('expiry_date', gracePeriodStart).lt('expiry_date', todayStr),
-    supabase.from('memberships').select('id', { count: 'exact', head: true }).eq('status', 'active').gte('expiry_date', todayStr).lte('expiry_date', weekAheadStr),
+    supabase.from('memberships').select('member_id, expiry_date, status'),
     supabase.from('payments').select('amount').gte('payment_date', firstOfMonth).neq('payment_type', 'admission'),
     supabase.from('payments').select('amount').gte('payment_date', firstOfMonth).eq('payment_type', 'admission'),
-    supabase.from('memberships').select('id', { count: 'exact', head: true }).eq('status', 'active').eq('expiry_date', todayStr),
   ])
 
   const revenueThisMonth = ((revenueRes.data ?? []) as { amount: number }[]).reduce((s, p) => s + (p.amount ?? 0), 0)
   const admissionFeeThisMonth = ((admissionFeeRes.data ?? []) as { amount: number }[]).reduce((s, p) => s + (p.amount ?? 0), 0)
 
+  // Counting raw membership rows double-counts members who've renewed —
+  // every past renewal cycle leaves behind a superseded 'expired' row, which
+  // eventually ages past the grace window and gets counted forever even
+  // though the member is currently active. Only each member's most recent
+  // (by expiry_date) non-cancelled row reflects their real current status.
+  const latestByMember: Record<string, string> = {}
+  for (const m of (allMembershipsRes.data ?? []) as { member_id: string; expiry_date: string; status: string }[]) {
+    if (m.status === 'cancelled') continue
+    if (!latestByMember[m.member_id] || m.expiry_date > latestByMember[m.member_id]) {
+      latestByMember[m.member_id] = m.expiry_date
+    }
+  }
+
+  let activeMembers = 0, expiredMembers = 0, gracePeriodMembers = 0, expiringThisWeek = 0, dueToday = 0
+  for (const expiryDate of Object.values(latestByMember)) {
+    const status = getMembershipStatus(expiryDate, gracePeriodDays)
+    if (status === 'active' || status === 'expiring_soon') activeMembers++
+    if (status === 'expiring_soon') expiringThisWeek++
+    if (status === 'grace_period') gracePeriodMembers++
+    if (status === 'expired') expiredMembers++
+    if (expiryDate === todayStr) dueToday++
+  }
+
   return {
     totalMembers: totalMembersRes.count ?? 0,
-    activeMembers: activeMembersRes.count ?? 0,
-    expiredMembers: expiredMembersRes.count ?? 0,
-    gracePeriodMembers: gracePeriodRes.count ?? 0,
-    expiringThisWeek: expiringThisWeekRes.count ?? 0,
+    activeMembers,
+    expiredMembers,
+    gracePeriodMembers,
+    expiringThisWeek,
     revenueThisMonth,
     admissionFeeThisMonth,
-    dueToday: dueTodayRes.count ?? 0,
+    dueToday,
   }
 }
 
@@ -122,25 +138,50 @@ const _getGracePeriodMembers = async (
   const todayStr = new Date().toISOString().slice(0, 10)
   const gracePeriodStart = new Date(Date.now() - gracePeriodDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
-  const { data, error } = await supabase
+  // Candidate rows whose expiry falls in the grace window — but a member may
+  // have a newer membership from a later renewal, in which case this row is
+  // superseded history, not their current status. Verified below against
+  // each candidate's actual latest membership before being kept.
+  const { data: candidates, error } = await supabase
     .from('memberships')
-    .select(`expiry_date, member:members!memberships_member_id_fkey(*)`)
+    .select(`member_id, expiry_date, member:members!memberships_member_id_fkey(*)`)
     .neq('status', 'cancelled')
     .gte('expiry_date', gracePeriodStart)
     .lt('expiry_date', todayStr)
     .order('expiry_date', { ascending: false })
-    .limit(limit)
 
   if (error) return []
 
+  type CandidateRow = { member_id: string; expiry_date: string; member: Member }
+  const rows = (candidates ?? []) as unknown as CandidateRow[]
+  if (rows.length === 0) return []
+
+  const memberIds = [...new Set(rows.map((r) => r.member_id))]
+  const { data: allMemberships } = await supabase
+    .from('memberships')
+    .select('member_id, expiry_date, status')
+    .in('member_id', memberIds)
+
+  const latestByMember: Record<string, string> = {}
+  for (const m of (allMemberships ?? []) as { member_id: string; expiry_date: string; status: string }[]) {
+    if (m.status === 'cancelled') continue
+    if (!latestByMember[m.member_id] || m.expiry_date > latestByMember[m.member_id]) {
+      latestByMember[m.member_id] = m.expiry_date
+    }
+  }
+
   const today = new Date(todayStr).getTime()
-  return ((data ?? []) as unknown as { expiry_date: string; member: Member }[]).map(
-    ({ expiry_date, member }) => ({
-      ...member,
-      expiry_date,
-      days_since_expiry: Math.round((today - new Date(expiry_date).getTime()) / 86400000),
+  const results: (Member & { expiry_date: string; days_since_expiry: number })[] = []
+  for (const row of rows) {
+    if (latestByMember[row.member_id] !== row.expiry_date) continue
+    results.push({
+      ...row.member,
+      expiry_date: row.expiry_date,
+      days_since_expiry: Math.round((today - new Date(row.expiry_date).getTime()) / 86400000),
     })
-  )
+    if (results.length >= limit) break
+  }
+  return results
 }
 
 export const getCachedGracePeriodMembers = unstable_cache(

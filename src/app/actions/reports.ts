@@ -40,11 +40,13 @@ export async function getReportsOverview(): Promise<ReportsOverview> {
         .is('deleted_at', null)
         .order('expiry_date', { foreignTable: 'memberships', ascending: false })
         .order('member_id', { ascending: true }),
+      // Unlimited — this feeds Total Revenue/Net Profit stats and the full
+      // payments Excel export, not just a display list, so it can't be capped
+      // the way the Payments page's live transaction table is.
       supabase
         .from('payments')
         .select(`*, member:members!payments_member_id_fkey(id, full_name, member_id)`)
-        .order('payment_date', { ascending: false })
-        .limit(100),
+        .order('payment_date', { ascending: false }),
       supabase.from('staff_salaries').select('status, net_salary'),
       supabase.from('expenses').select('status, amount'),
     ])
