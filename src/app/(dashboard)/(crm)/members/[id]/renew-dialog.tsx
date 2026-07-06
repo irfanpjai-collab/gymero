@@ -80,8 +80,18 @@ export default function RenewDialog({
   const [daysSince, setDaysSince] = useState<number | null>(null)
   const [paymentMethod, setPaymentMethod] = useState('cash')
 
+  // If this dialog starts open via defaultOpen (the /members/[id]?renew=1
+  // entry point from the Members list), there's no user-driven open event to
+  // hang the plan/last-expiry load off — Radix's onOpenChange only fires when
+  // *it* changes the open state (closing), not when we set it ourselves. So
+  // this mount effect covers that path directly, using the real (not
+  // placeholder) grace period value once it resolves.
   useEffect(() => {
-    getGracePeriodDays().then(setGracePeriodDays)
+    getGracePeriodDays().then((days) => {
+      setGracePeriodDays(days)
+      if (defaultOpen) loadOnOpen(days)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Loads plans + last-expiry info the moment the dialog opens — driven from
@@ -186,7 +196,7 @@ export default function RenewDialog({
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => handleOpenChange(true)}
         className={`inline-flex items-center gap-1.5 px-4 py-2 text-sm bg-primary hover:bg-primary/90 text-white rounded-xl font-medium transition-colors ${className}`}
       >
         <RefreshCw className="w-3.5 h-3.5" />

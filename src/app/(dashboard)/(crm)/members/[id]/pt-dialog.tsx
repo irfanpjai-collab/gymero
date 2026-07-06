@@ -118,7 +118,7 @@ export function PtDialog({
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => handleOpenChange(true)}
         className={`inline-flex items-center gap-1.5 px-4 py-2 text-sm bg-primary hover:bg-primary/90 text-white rounded-xl font-medium transition-colors ${className}`}
       >
         <Dumbbell className="w-3.5 h-3.5" />

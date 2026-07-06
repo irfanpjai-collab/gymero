@@ -90,7 +90,7 @@ export default function EditExpiryDialog({
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
+        onClick={() => handleOpenChange(true)}
         title="Edit expiry date"
         className="inline-flex items-center justify-center w-5 h-5 text-muted-foreground hover:text-foreground transition-colors"
       >
