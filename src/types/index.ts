@@ -17,7 +17,7 @@ export interface Member {
   email?: string
   address?: string
   gender: 'male' | 'female' | 'other'
-  join_date: string
+  join_date: string | null
   admission_fee?: number
   notes?: string
   created_at: string

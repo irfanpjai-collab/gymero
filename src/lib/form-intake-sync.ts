@@ -121,6 +121,41 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
     .in('duration_months', [1, 3])
   const planByDuration = new Map((plans ?? []).map(p => [p.duration_months, p]))
 
+  // Shared by both the brand-new-member path and the retroactive path below —
+  // only ever called when the member has zero memberships, so this can't
+  // clobber a plan staff have since corrected by hand. Needs a real start
+  // date to compute an expiry; if the sheet's Join Date is blank and the
+  // member has no join date on file either, skips with a warning instead of
+  // guessing "today" (which would misrepresent when they actually joined).
+  async function createMembershipIfNone(
+    memberUuid: string,
+    memberIdForLog: number,
+    startDate: string | null,
+    plan: { id: string; duration_months: number; fee: number } | undefined
+  ): Promise<void> {
+    if (!plan) return
+    if (!startDate) {
+      result.warnings.push(
+        `Member ID ${memberIdForLog}: has a membership month but no Join Date to compute the membership from — add a Join Date and re-sync`
+      )
+      return
+    }
+
+    const expiry = new Date(startDate)
+    expiry.setMonth(expiry.getMonth() + plan.duration_months)
+
+    const { error } = await supabase.from('memberships').insert({
+      member_id: memberUuid,
+      plan_id: plan.id,
+      start_date: startDate,
+      expiry_date: expiry.toISOString().slice(0, 10),
+      amount: plan.fee,
+      status: 'active',
+      payment_pending: false, // treated as already paid in cash — no `payments` row, so this stays out of Accounts
+    })
+    if (error) result.errors.push(`Member ID ${memberIdForLog}: membership creation failed — ${error.message}`)
+  }
+
   for (const [memberId, entries] of byId) {
     const distinctNames = new Set(entries.map(e => e.name.toLowerCase()))
     if (distinctNames.size > 1) {
@@ -137,7 +172,7 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
 
     const { data: existing, error: lookupError } = await supabase
       .from('members')
-      .select('id')
+      .select('id, join_date')
       .eq('member_id', memberId)
       .maybeSingle()
 
@@ -146,19 +181,44 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
       continue
     }
 
+    const durationMonths = membershipDurationMonths(row.membershipMonth)
+    const plan = durationMonths ? planByDuration.get(durationMonths) : undefined
+
     const payload: Record<string, unknown> = { full_name: row.name, mobile: row.mobile, address: row.place || null }
+    // A blank Join Date on a re-sync must never overwrite an already-known
+    // one — only ever set it going from unknown to known.
     if (row.joinDate) payload.join_date = row.joinDate
 
     if (existing) {
       const { error } = await supabase.from('members').update(payload).eq('member_id', memberId)
-      if (error) result.errors.push(`Member ID ${memberId}: update failed — ${error.message}`)
-      else result.updated++
+      if (error) {
+        result.errors.push(`Member ID ${memberId}: update failed — ${error.message}`)
+        continue
+      }
+      result.updated++
+
+      // Covers syncing before MEMBERSHIP MONTH was filled in: if this member
+      // still has no membership at all, and the sheet now specifies a valid
+      // one, create it now instead of silently doing nothing.
+      const { count } = await supabase
+        .from('memberships')
+        .select('id', { count: 'exact', head: true })
+        .eq('member_id', (existing as { id: string }).id)
+      if (!count) {
+        const existingJoinDate = (existing as { join_date: string | null }).join_date
+        await createMembershipIfNone(
+          (existing as { id: string }).id,
+          memberId,
+          row.joinDate ?? existingJoinDate,
+          plan
+        )
+      }
       continue
     }
 
-    const insertPayload = { ...payload, member_id: memberId } as Record<string, unknown>
-    const durationMonths = membershipDurationMonths(row.membershipMonth)
-    const plan = durationMonths ? planByDuration.get(durationMonths) : undefined
+    // New member — a blank Join Date is left genuinely unknown (null) rather
+    // than silently stamped with today's (sync) date.
+    const insertPayload = { ...payload, member_id: memberId, join_date: row.joinDate ?? null } as Record<string, unknown>
     if (durationMonths) {
       insertPayload.notes = `Requested plan (from intake form): ${durationMonths === 1 ? 'Monthly' : 'Quarterly'}`
     }
@@ -170,24 +230,7 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
     }
     result.created++
 
-    if (plan && inserted) {
-      const startDate = row.joinDate ?? new Date().toISOString().slice(0, 10)
-      const expiry = new Date(startDate)
-      expiry.setMonth(expiry.getMonth() + plan.duration_months)
-
-      const { error: membershipError } = await supabase.from('memberships').insert({
-        member_id: (inserted as { id: string }).id,
-        plan_id: plan.id,
-        start_date: startDate,
-        expiry_date: expiry.toISOString().slice(0, 10),
-        amount: plan.fee,
-        status: 'active',
-        payment_pending: false, // treated as already paid in cash — no `payments` row, so this stays out of Accounts
-      })
-      if (membershipError) {
-        result.errors.push(`Member ID ${memberId}: membership creation failed — ${membershipError.message}`)
-      }
-    }
+    await createMembershipIfNone((inserted as { id: string }).id, memberId, row.joinDate, plan)
   }
 
   // Without this, the Dashboard/Members pages (both behind unstable_cache,

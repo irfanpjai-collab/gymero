@@ -221,7 +221,7 @@ async function MembersTable({
                         </td>
                         <td className="px-4 py-3.5 text-muted-foreground">{member.mobile}</td>
                         <td className="px-4 py-3.5 text-muted-foreground capitalize">{member.gender}</td>
-                        <td className="px-4 py-3.5 text-muted-foreground whitespace-nowrap">{formatDate(member.join_date)}</td>
+                        <td className="px-4 py-3.5 text-muted-foreground whitespace-nowrap">{member.join_date ? formatDate(member.join_date) : '—'}</td>
                         <td className="px-4 py-3.5"><StatusBadge member={member} gracePeriodDays={gracePeriodDays} /></td>
                         <td className="px-4 py-3.5 text-muted-foreground whitespace-nowrap">
                           {expiryDate ? formatDate(expiryDate) : '—'}

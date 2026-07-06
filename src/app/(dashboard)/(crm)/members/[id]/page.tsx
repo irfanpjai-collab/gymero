@@ -220,7 +220,7 @@ export default async function MemberDetailPage({
             <InfoRow icon={Mail} label="Email" value={member.email || '—'} />
             <InfoRow icon={MapPin} label="Address" value={member.address || '—'} />
             <InfoRow icon={User} label="Gender" value={genderLabel} />
-            <InfoRow icon={Calendar} label="Date Joined" value={formatDate(member.join_date)} />
+            <InfoRow icon={Calendar} label="Date Joined" value={member.join_date ? formatDate(member.join_date) : '—'} />
             <InfoRow icon={CreditCard} label="Admission Fee Paid" value={member.admission_fee ? formatCurrency(member.admission_fee) : '—'} />
             {member.notes && (
               <InfoRow icon={FileText} label="Notes" value={member.notes} />

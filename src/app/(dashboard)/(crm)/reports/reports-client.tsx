@@ -53,7 +53,7 @@ export default function ReportsClient({
       'Mobile': m.mobile,
       'Email': m.email ?? '',
       'Gender': m.gender,
-      'Join Date': formatDate(m.join_date),
+      'Join Date': m.join_date ? formatDate(m.join_date) : '',
       'Expiry Date': m.active_membership ? formatDate(m.active_membership.expiry_date) : 'N/A',
       'Status': m.active_membership ? getMembershipStatus(m.active_membership.expiry_date, gracePeriodDays) : 'No Plan',
     })), 'members-report')
@@ -144,7 +144,7 @@ export default function ReportsClient({
                           </Link>
                         </td>
                         <td className="px-4 py-2.5 text-muted-foreground">{m.mobile}</td>
-                        <td className="px-4 py-2.5 text-muted-foreground">{formatDate(m.join_date)}</td>
+                        <td className="px-4 py-2.5 text-muted-foreground">{m.join_date ? formatDate(m.join_date) : '—'}</td>
                         <td className="px-4 py-2.5 text-muted-foreground">{m.active_membership ? formatDate(m.active_membership.expiry_date) : '—'}</td>
                         <td className="px-4 py-2.5"><span className={`capitalize text-sm font-medium ${statusColors[status] ?? 'text-muted-foreground'}`}>{status.replace(/_/g, ' ')}</span></td>
                       </tr>
