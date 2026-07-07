@@ -61,8 +61,20 @@ export interface FormIntakeSyncResult {
   errors: string[]    // real failures — config, sheet fetch, or DB operations
 }
 
+// A structured record of the same "skipped due to a data-entry problem" rows
+// that also go into `result.warnings` above — persisted to form_intake_issues
+// so staff have somewhere durable to look (the Members page's Error Members
+// section), not just a toast that's gone the moment someone clicks Sync.
+interface IntakeIssue {
+  attemptedMemberId: string | null
+  name: string | null
+  mobile: string | null
+  reason: string
+}
+
 export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
   const result: FormIntakeSyncResult = { ok: false, created: 0, updated: 0, skipped: 0, warnings: [], errors: [] }
+  const issues: IntakeIssue[] = []
 
   const spreadsheetId = process.env.GYM_INTAKE_FORM_SPREADSHEET_ID
   if (!spreadsheetId) {
@@ -93,11 +105,23 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
     if (!memberId || memberId < 1) {
       result.skipped++
       result.warnings.push(`Skipped "${name ?? 'unknown'}": invalid/missing Member ID "${memberIdRaw ?? ''}"`)
+      issues.push({
+        attemptedMemberId: memberIdRaw || null,
+        name: name ?? null,
+        mobile: mobile ?? null,
+        reason: memberIdRaw ? `"${memberIdRaw}" isn't a valid Member ID` : 'Member ID is missing',
+      })
       continue
     }
     if (!name || !mobile) {
       result.skipped++
       result.warnings.push(`Skipped Member ID ${memberId}: missing name or mobile`)
+      issues.push({
+        attemptedMemberId: memberIdRaw ?? null,
+        name: name ?? null,
+        mobile: mobile ?? null,
+        reason: !name && !mobile ? 'Missing name and mobile number' : !name ? 'Missing name' : 'Missing mobile number',
+      })
       continue
     }
 
@@ -229,6 +253,13 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
       result.warnings.push(
         `Skipped Member ID ${memberId}: used by multiple different names in the sheet (${[...distinctNames].join(' / ')}) — fix the duplicate before this can sync`
       )
+      const names = [...new Set(entries.map(e => e.name))]
+      issues.push({
+        attemptedMemberId: String(memberId),
+        name: names.join(' / '),
+        mobile: entries[entries.length - 1].mobile,
+        reason: `Member ID ${memberId} is used by multiple different names in the sheet — someone typed it wrong`,
+      })
       return
     }
 
@@ -293,11 +324,26 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
     await Promise.all(batch.map(([memberId, entries]) => processMember(memberId, entries)))
   }
 
+  // Full replace, not an append — this table should only ever reflect the
+  // *currently* unresolved rows. Anything fixed in the sheet since the last
+  // run simply won't be in `issues` this time and drops out on its own.
+  await supabase.from('form_intake_issues').delete().not('id', 'is', null)
+  if (issues.length > 0) {
+    await supabase.from('form_intake_issues').insert(
+      issues.map(i => ({
+        attempted_member_id: i.attemptedMemberId,
+        name: i.name,
+        mobile: i.mobile,
+        reason: i.reason,
+      }))
+    )
+  }
+
   // Without this, the Dashboard/Members pages (both behind unstable_cache,
   // see src/lib/cached-queries.ts) wouldn't pick up what this cron just wrote
   // until their normal 5-minute revalidate window happened to expire —
   // correct in the DB immediately, invisible in the UI for up to 5 minutes.
-  if (result.created > 0 || result.updated > 0) {
+  if (result.created > 0 || result.updated > 0 || issues.length > 0) {
     revalidateTag('members', {})
     revalidatePath('/members')
     revalidatePath('/dashboard')

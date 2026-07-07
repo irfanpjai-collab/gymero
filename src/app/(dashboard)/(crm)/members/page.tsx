@@ -15,6 +15,7 @@ import { formatDate, formatDateTime, getMembershipStatus, getStatusColor } from 
 import { Badge } from '@/components/ui/badge'
 import SyncFormIntakeButton from './sync-form-intake-button'
 import MembersSearchInput from './search-input'
+import IntakeIssuesSection from './intake-issues-section'
 import type { Member } from '@/types'
 
 const PAGE_SIZE = 20
@@ -340,6 +341,11 @@ export default async function MembersPage({ searchParams }: { searchParams: Sear
           </Link>
         </div>
       </div>
+
+      {/* Error Members — sheet rows that couldn't sync, e.g. a mistyped Member ID */}
+      <Suspense fallback={null}>
+        <IntakeIssuesSection />
+      </Suspense>
 
       {/* Search bar — filters live as you type, no Enter needed */}
       <MembersSearchInput initialSearch={search} />
