@@ -159,16 +159,17 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
   // instead, so the loop below only ever does a round trip when it's actually
   // writing something.
   type MembershipRow = { id: string; member_id: string; plan_id: string; start_date: string }
+  type ExistingMember = { id: string; join_date: string | null; full_name: string; mobile: string; address: string | null }
   const allMemberIds = [...byId.keys()]
-  const existingByMemberId = new Map<number, { id: string; join_date: string | null }>()
+  const existingByMemberId = new Map<number, ExistingMember>()
   const membershipsByMember = new Map<string, MembershipRow[]>()
   if (allMemberIds.length > 0) {
     const { data: existingMembers } = await supabase
       .from('members')
-      .select('id, member_id, join_date')
+      .select('id, member_id, join_date, full_name, mobile, address')
       .in('member_id', allMemberIds)
-    for (const m of (existingMembers ?? []) as { id: string; member_id: number; join_date: string | null }[]) {
-      existingByMemberId.set(m.member_id, { id: m.id, join_date: m.join_date })
+    for (const m of (existingMembers ?? []) as (ExistingMember & { member_id: number })[]) {
+      existingByMemberId.set(m.member_id, { id: m.id, join_date: m.join_date, full_name: m.full_name, mobile: m.mobile, address: m.address })
     }
 
     const existingUuids = [...existingByMemberId.values()].map(m => m.id)
@@ -300,12 +301,28 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
     if (row.joinDate) payload.join_date = row.joinDate
 
     if (existing) {
-      const { error } = await supabase.from('members').update(payload).eq('member_id', memberId)
-      if (error) {
-        result.errors.push(`Member ID ${memberId}: update failed — ${error.message}`)
-        return
+      // Skip the write entirely when nothing actually changed — with the
+      // sheet keeping every submission ever made, an edit anywhere re-syncs
+      // every row, and unconditionally re-writing all of them (even the ones
+      // untouched) was most of why each sync run got slow. This is the only
+      // unconditional write in the existing-member path; the membership
+      // checks below already have their own change-detection and stay cheap
+      // no-ops regardless.
+      const addressValue = row.place || null
+      const changed =
+        row.name !== existing.full_name ||
+        row.mobile !== existing.mobile ||
+        addressValue !== existing.address ||
+        (!!row.joinDate && row.joinDate !== existing.join_date)
+
+      if (changed) {
+        const { error } = await supabase.from('members').update(payload).eq('member_id', memberId)
+        if (error) {
+          result.errors.push(`Member ID ${memberId}: update failed — ${error.message}`)
+          return
+        }
+        result.updated++
       }
-      result.updated++
 
       const memberships = membershipsByMember.get(existing.id) ?? []
       if (memberships.length === 0) {
