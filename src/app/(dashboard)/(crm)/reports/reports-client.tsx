@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { BarChart3, Download, Users, DollarSign, TrendingUp, TrendingDown, Scale } from 'lucide-react'
-import * as XLSX from 'xlsx'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { formatDate, formatCurrency, getMembershipStatus } from '@/lib/utils'
 import type { Member, Payment } from '@/types'
@@ -11,7 +10,10 @@ import type { Member, Payment } from '@/types'
 const TABS = ['Members', 'Financial'] as const
 type TabType = typeof TABS[number]
 
-function exportToExcel(data: Record<string, unknown>[], filename: string) {
+// xlsx is a large library — loaded on demand when someone actually clicks
+// Export, instead of bundled into this page's initial load.
+async function exportToExcel(data: Record<string, unknown>[], filename: string) {
+  const XLSX = await import('xlsx')
   const ws = XLSX.utils.json_to_sheet(data)
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, 'Report')

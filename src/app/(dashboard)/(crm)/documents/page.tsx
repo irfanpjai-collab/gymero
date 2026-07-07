@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import { FileSpreadsheet, Download, Loader2, Calendar } from 'lucide-react'
-import * as XLSX from 'xlsx'
 import { toast } from 'sonner'
 import { getDocumentCenterData } from '@/app/actions/documents'
 import { formatDate } from '@/lib/utils'
@@ -55,7 +54,10 @@ export default function DocumentCenterPage() {
 
     setDownloading(true)
     try {
-      const res = await getDocumentCenterData(range.start, range.end)
+      const [res, XLSX] = await Promise.all([
+        getDocumentCenterData(range.start, range.end),
+        import('xlsx'),
+      ])
       if (res.error || !res.data) {
         toast.error(res.error ?? 'Failed to load data')
         return

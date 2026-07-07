@@ -4,7 +4,6 @@ import { useState, useRef, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Download, Upload, FileSpreadsheet, CheckCircle, AlertCircle, Loader2 } from 'lucide-react'
 import Link from 'next/link'
-import * as XLSX from 'xlsx'
 import { toast } from 'sonner'
 import { importMembers } from '@/app/actions/members'
 import type { ImportMemberRow } from '@/types'
@@ -14,7 +13,11 @@ const REQUIRED_COLUMNS = ['Member ID', 'Full Name', 'Mobile', 'Join Date']
 const OPTIONAL_COLUMNS = ['Address']
 const TEMPLATE_COLUMNS = [...REQUIRED_COLUMNS, ...OPTIONAL_COLUMNS]
 
-function downloadTemplate() {
+// xlsx is a large library — loaded on demand (button click / file select)
+// instead of at the top of the module, so it doesn't bloat this page's
+// initial JS bundle for the common case of someone just browsing to it.
+async function downloadTemplate() {
+  const XLSX = await import('xlsx')
   const sampleData = [
     { 'Member ID': 100, 'Full Name': 'John Doe', 'Mobile': '9876543210', 'Join Date': '01/01/2024', 'Address': '' },
     { 'Member ID': 101, 'Full Name': 'Jane Smith', 'Mobile': '9876543211', 'Join Date': '15/02/2024', 'Address': '12 Main Street' },
@@ -72,8 +75,9 @@ export default function ImportPage() {
     if (!file) return
     setFileName(file.name)
     const reader = new FileReader()
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       try {
+        const XLSX = await import('xlsx')
         const data = evt.target?.result
         const wb = XLSX.read(data, { type: 'binary', cellDates: true })
         const ws = wb.Sheets[wb.SheetNames[0]]
