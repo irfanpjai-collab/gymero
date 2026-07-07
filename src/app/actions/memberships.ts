@@ -275,6 +275,7 @@ export async function updatePlan(
 
     if (error) throw error
 
+    revalidateTag('memberships', {})
     revalidatePath('/memberships')
     return {}
   } catch (err) {
@@ -303,6 +304,7 @@ export async function createPlan(data: {
 
     if (error) throw error
 
+    revalidateTag('memberships', {})
     revalidatePath('/memberships')
     return {}
   } catch (err) {

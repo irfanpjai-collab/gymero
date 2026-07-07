@@ -47,6 +47,7 @@ export async function createPtPlan(data: {
 
     if (error) throw error
 
+    revalidateTag('coaches', {})
     revalidatePath('/coaches')
     return {}
   } catch (err) {

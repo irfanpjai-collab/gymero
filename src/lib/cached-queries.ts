@@ -1,7 +1,7 @@
 import { unstable_cache } from 'next/cache'
 import { createAdminClient } from './supabase/admin'
 import { DEFAULT_GRACE_PERIOD_DAYS, getMembershipStatus } from './utils'
-import type { Member, DashboardStats } from '@/types'
+import type { Member, DashboardStats, Payment, MembershipPlan, Coach, PtPlan } from '@/types'
 
 // Cached DB reads using the admin (service-role) client so they can run
 // outside a request context. Tags bust when the corresponding mutations
@@ -325,4 +325,142 @@ export const getCachedExpiredCheckIns = unstable_cache(
   _getExpiredCheckIns,
   ['expired-check-ins'],
   { tags: ['members'], revalidate: 300 }
+)
+
+// ── Payments ─────────────────────────────────────────────────────────────────
+// Safe to cache: every mutation that inserts a payment (createMembership,
+// renewMembership, recordPayment, assignPtMembership, and the admission-fee
+// payment on member creation) already calls revalidateTag('payments') —
+// confirmed by grep before adding this, not assumed.
+
+const _getPaymentsList = async (): Promise<Payment[]> => {
+  const supabase = createAdminClient()
+  const { data, error } = await supabase
+    .from('payments')
+    .select(`
+      *,
+      member:members!payments_member_id_fkey(id, full_name, member_id, mobile),
+      membership:memberships!payments_membership_id_fkey(id, expiry_date, plan:membership_plans(name, duration_months)),
+      pt_membership:pt_memberships!payments_pt_membership_id_fkey(id, expiry_date, plan:pt_plans(name, duration_months))
+    `)
+    .order('payment_date', { ascending: false })
+    .limit(100)
+
+  if (error) return []
+  return (data ?? []) as unknown as Payment[]
+}
+
+export const getCachedPaymentsList = unstable_cache(
+  _getPaymentsList,
+  ['payments-list'],
+  { tags: ['payments'], revalidate: 300 }
+)
+
+const _getPaymentsSummary = async (): Promise<{ totalRevenue: number; totalCount: number }> => {
+  const supabase = createAdminClient()
+  const { data, error } = await supabase.from('payments').select('amount')
+  if (error) return { totalRevenue: 0, totalCount: 0 }
+  const rows = (data ?? []) as { amount: number }[]
+  return { totalRevenue: rows.reduce((s, r) => s + r.amount, 0), totalCount: rows.length }
+}
+
+export const getCachedPaymentsSummary = unstable_cache(
+  _getPaymentsSummary,
+  ['payments-summary'],
+  { tags: ['payments'], revalidate: 300 }
+)
+
+const _getMonthlyRevenue = async (): Promise<{ month: string; revenue: number }[]> => {
+  const supabase = createAdminClient()
+  const { data: payments, error } = await supabase
+    .from('payments')
+    .select('payment_date, amount')
+    .order('payment_date', { ascending: false })
+
+  if (error) return []
+
+  const monthMap: Record<string, { total: number; minDate: Date }> = {}
+  for (const p of (payments ?? []) as { payment_date: string; amount: number }[]) {
+    const date = new Date(p.payment_date)
+    const key = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+    if (!monthMap[key]) monthMap[key] = { total: 0, minDate: date }
+    monthMap[key].total += p.amount
+  }
+
+  return Object.entries(monthMap)
+    .map(([month, { total, minDate }]) => ({ month, revenue: total, _minDate: minDate }))
+    .sort((a, b) => b._minDate.getTime() - a._minDate.getTime())
+    .slice(0, 12)
+    .map(({ month, revenue }) => ({ month, revenue }))
+}
+
+export const getCachedMonthlyRevenue = unstable_cache(
+  _getMonthlyRevenue,
+  ['monthly-revenue'],
+  { tags: ['payments'], revalidate: 300 }
+)
+
+// ── Membership plans ─────────────────────────────────────────────────────────
+// Safe to cache: createPlan/updatePlan both call revalidateTag('memberships')
+// (added alongside this).
+
+const _getPlans = async (): Promise<MembershipPlan[]> => {
+  const supabase = createAdminClient()
+  const { data, error } = await supabase
+    .from('membership_plans')
+    .select('*')
+    .eq('is_active', true)
+    .order('duration_months', { ascending: true })
+
+  if (error) return []
+  return (data ?? []) as MembershipPlan[]
+}
+
+export const getCachedPlans = unstable_cache(
+  _getPlans,
+  ['membership-plans'],
+  { tags: ['memberships'], revalidate: 300 }
+)
+
+// ── Coaches ──────────────────────────────────────────────────────────────────
+// Safe to cache: createCoach/updateCoach/assignMember/unassignMember all
+// already call revalidateTag('coaches') — confirmed by grep before adding this.
+
+const _getCoaches = async (): Promise<Coach[]> => {
+  const supabase = createAdminClient()
+  const { data, error } = await supabase
+    .from('coaches')
+    .select('*')
+    .eq('is_active', true)
+    .order('name', { ascending: true })
+
+  if (error) return []
+  return (data ?? []) as Coach[]
+}
+
+export const getCachedCoaches = unstable_cache(
+  _getCoaches,
+  ['coaches-list'],
+  { tags: ['coaches'], revalidate: 300 }
+)
+
+// Same 'coaches' tag as above, deliberately — PT plans are only ever shown
+// on the Coaches page, and createPtPlan already revalidates that tag
+// (added alongside this) so one tag covers both without a separate one.
+const _getPtPlans = async (): Promise<PtPlan[]> => {
+  const supabase = createAdminClient()
+  const { data, error } = await supabase
+    .from('pt_plans')
+    .select('*')
+    .eq('is_active', true)
+    .order('duration_months', { ascending: true })
+
+  if (error) return []
+  return (data ?? []) as PtPlan[]
+}
+
+export const getCachedPtPlans = unstable_cache(
+  _getPtPlans,
+  ['pt-plans'],
+  { tags: ['coaches'], revalidate: 300 }
 )

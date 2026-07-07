@@ -1,7 +1,7 @@
-import { getPlans } from '@/app/actions/memberships'
+import { getCachedPlans } from '@/lib/cached-queries'
 import MembershipsClient from './memberships-client'
 
 export default async function MembershipsPage() {
-  const plans = await getPlans()
+  const plans = await getCachedPlans()
   return <MembershipsClient initialPlans={plans} />
 }
