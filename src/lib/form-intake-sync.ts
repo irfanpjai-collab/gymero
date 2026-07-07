@@ -186,14 +186,19 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
     if (error) result.errors.push(`Member ID ${memberIdForLog}: membership creation failed — ${error.message}`)
   }
 
-  for (const [memberId, entries] of byId) {
+  // Each Member ID is independent (the `byId` grouping above already collapsed
+  // any duplicate rows per ID), so these can safely run concurrently instead
+  // of waiting for one row's writes to finish before starting the next.
+  // Bounded rather than a single unbounded Promise.all so a very large sheet
+  // can't fire hundreds of simultaneous requests at Supabase at once.
+  async function processMember(memberId: number, entries: ParsedRow[]): Promise<void> {
     const distinctNames = new Set(entries.map(e => e.name.toLowerCase()))
     if (distinctNames.size > 1) {
       result.skipped += entries.length
       result.warnings.push(
         `Skipped Member ID ${memberId}: used by multiple different names in the sheet (${[...distinctNames].join(' / ')}) — fix the duplicate before this can sync`
       )
-      continue
+      return
     }
 
     // Multiple rows for the same person (re-submission/edit) — the sheet's
@@ -213,7 +218,7 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
       const { error } = await supabase.from('members').update(payload).eq('member_id', memberId)
       if (error) {
         result.errors.push(`Member ID ${memberId}: update failed — ${error.message}`)
-        continue
+        return
       }
       result.updated++
 
@@ -223,7 +228,7 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
       if (!hasMembership.has(existing.id)) {
         await createMembershipIfNone(existing.id, memberId, row.joinDate ?? existing.join_date, plan)
       }
-      continue
+      return
     }
 
     // New member — a blank Join Date is left genuinely unknown (null) rather
@@ -236,11 +241,18 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
     const { data: inserted, error } = await supabase.from('members').insert(insertPayload).select('id').single()
     if (error) {
       result.errors.push(`Member ID ${memberId}: insert failed — ${error.message}`)
-      continue
+      return
     }
     result.created++
 
     await createMembershipIfNone((inserted as { id: string }).id, memberId, row.joinDate, plan)
+  }
+
+  const CONCURRENCY = 10
+  const idEntries = [...byId.entries()]
+  for (let i = 0; i < idEntries.length; i += CONCURRENCY) {
+    const batch = idEntries.slice(i, i + CONCURRENCY)
+    await Promise.all(batch.map(([memberId, entries]) => processMember(memberId, entries)))
   }
 
   // Without this, the Dashboard/Members pages (both behind unstable_cache,
