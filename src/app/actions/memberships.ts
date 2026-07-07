@@ -382,3 +382,11 @@ export async function updateMembershipExpiry(
   }
 }
 
+// Called by TableRealtimeRefresh whenever it detects any change to
+// membership_plans, regardless of source — see revalidatePaymentsData for
+// the reasoning.
+export async function revalidateMembershipsData(): Promise<void> {
+  revalidateTag('memberships', {})
+  revalidatePath('/memberships')
+}
+

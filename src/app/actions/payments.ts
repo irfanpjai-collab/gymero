@@ -144,3 +144,12 @@ export async function getMonthlyRevenue(): Promise<{ month: string; revenue: num
     return []
   }
 }
+
+// Called by TableRealtimeRefresh whenever it detects any change to the
+// payments table, regardless of source — the safety net for the cached
+// Payments page independent of whether the mutation that wrote the row
+// remembered to call revalidateTag itself.
+export async function revalidatePaymentsData(): Promise<void> {
+  revalidateTag('payments', {})
+  revalidatePath('/payments')
+}

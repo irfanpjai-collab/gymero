@@ -159,3 +159,11 @@ export async function unassignMember(
     return { error: message }
   }
 }
+
+// Called by TableRealtimeRefresh whenever it detects any change to coaches
+// or pt_plans, regardless of source — see revalidatePaymentsData (payments.ts)
+// for the reasoning.
+export async function revalidateCoachesData(): Promise<void> {
+  revalidateTag('coaches', {})
+  revalidatePath('/coaches')
+}

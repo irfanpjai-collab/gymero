@@ -1,4 +1,6 @@
 import { getCachedPaymentsList, getCachedMonthlyRevenue, getCachedPaymentsSummary } from '@/lib/cached-queries'
+import { revalidatePaymentsData } from '@/app/actions/payments'
+import TableRealtimeRefresh from '@/components/shared/TableRealtimeRefresh'
 import PaymentsClient from './payments-client'
 
 export default async function PaymentsPage() {
@@ -7,5 +9,10 @@ export default async function PaymentsPage() {
     getCachedMonthlyRevenue(),
     getCachedPaymentsSummary(),
   ])
-  return <PaymentsClient initialPayments={payments} initialMonthlyRevenue={monthlyRevenue} initialSummary={summary} />
+  return (
+    <>
+      <TableRealtimeRefresh channelName="payments_page_live" tables={['payments']} onChange={revalidatePaymentsData} />
+      <PaymentsClient initialPayments={payments} initialMonthlyRevenue={monthlyRevenue} initialSummary={summary} />
+    </>
+  )
 }
