@@ -1,6 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getSheetValues } from '@/lib/google-sheets'
-import { queueMissingEnrollments } from '@/lib/adms-enrollment'
 import { revalidateTag, revalidatePath } from 'next/cache'
 
 // Pulls new/edited rows from the gym's Google Form intake sheet (a *separate*
@@ -265,6 +264,14 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
     if (error) result.errors.push(`Member ID ${memberIdForLog}: membership update failed — ${error.message}`)
   }
 
+  // Pushed to the device at the end — a targeted insert for just these new
+  // members, not a full "scan every member/attendance/command row" catch-up
+  // (that's what made every single Apps Script trigger slow, re-checking
+  // ~70 members' device status on every single edit regardless of which row
+  // changed). Anyone still missed entirely (e.g. from before this existed)
+  // is still caught by the "Bulk Enroll" button on the Biometric page.
+  const newlyCreated: { member_id: number; full_name: string }[] = []
+
   // Each Member ID is independent (the `byId` grouping above already collapsed
   // any duplicate rows per ID), so these can safely run concurrently instead
   // of waiting for one row's writes to finish before starting the next.
@@ -353,6 +360,7 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
       return
     }
     result.created++
+    newlyCreated.push({ member_id: memberId, full_name: row.name })
 
     await createMembershipIfNone((inserted as { id: string }).id, memberId, row.joinDate, plan)
   }
@@ -364,16 +372,14 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
     await Promise.all(batch.map(([memberId, entries]) => processMember(memberId, entries)))
   }
 
-  // Pushes anyone not yet on the device — a brand-new member from this run,
-  // or anyone ever missed by another path — to the ADMS enroll queue. Errors
-  // here are logged but don't fail the sync itself (mirrors the same
-  // fire-and-forget device-push pattern used elsewhere, e.g.
-  // pushNewMembersToDevice in members.ts) — a CRM data sync succeeding
-  // shouldn't be reported as failed just because the device push had an issue.
-  try {
-    await queueMissingEnrollments(supabase, null)
-  } catch (err) {
-    console.error('form intake sync: queueMissingEnrollments failed —', err)
+  // Push just this run's new members to the device — errors logged but
+  // don't fail the sync itself, same fire-and-forget pattern as
+  // pushNewMembersToDevice in members.ts.
+  if (newlyCreated.length > 0) {
+    const { error } = await supabase.from('adms_commands').insert(
+      newlyCreated.map(m => ({ operation: 'enroll' as const, member_id: m.member_id, full_name: m.full_name }))
+    )
+    if (error) console.error('form intake sync: device enroll queue failed —', error.message)
   }
 
   // Full replace, not an append — this table should only ever reflect the
