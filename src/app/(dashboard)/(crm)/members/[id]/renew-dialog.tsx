@@ -16,7 +16,7 @@ import { getGracePeriodDays } from '@/app/actions/settings'
 import { getPayments } from '@/app/actions/payments'
 import { sendReceiptViaWhatsApp } from '@/lib/receipt'
 import type { MembershipPlan } from '@/types'
-import { differenceInDays, parseISO, addDays, format } from 'date-fns'
+import { differenceInDays, parseISO, format } from 'date-fns'
 
 const today = new Date().toISOString().slice(0, 10)
 
@@ -126,10 +126,9 @@ export default function RenewDialog({
         setAdmissionFee('0')
       }
 
-      // Default start date to the day after expiry if expiry is in the future (overlapping fix)
+      // Default start date to the expiry date itself if expiry is still in the future
       if (days < 0) {
-        const nextDay = addDays(expiryDateObj, 1)
-        setStartDate(format(nextDay, 'yyyy-MM-dd'))
+        setStartDate(format(expiryDateObj, 'yyyy-MM-dd'))
       } else {
         setStartDate(today)
       }
@@ -206,7 +205,7 @@ export default function RenewDialog({
     ? (() => {
         const d = new Date(startDate)
         d.setMonth(d.getMonth() + selectedPlan.duration_months)
-        return d.toLocaleDateString('en-GB')
+        return format(d, 'dd MMM yyyy')
       })()
     : null
 
@@ -248,7 +247,7 @@ export default function RenewDialog({
                     <p className="text-xs text-red-300">
                       {lastExpiryDate ? (
                         <>
-                          Membership expired on {new Date(lastExpiryDate).toLocaleDateString('en-GB')} ({daysSince} days ago).
+                          Membership expired on {format(new Date(lastExpiryDate), 'dd MMM yyyy')} ({daysSince} days ago).
                           This exceeds the {gracePeriodDays}-day grace period. An admission fee of ₹{defaultAdmissionFee} is required.
                         </>
                       ) : (

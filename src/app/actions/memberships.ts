@@ -149,16 +149,15 @@ export async function renewMembership(
       ? new Date((currentActive as { expiry_date: string }).expiry_date)
       : null
 
-    // If membership is still active (expiry today or in the future), extend from the
-    // day after that expiry instead of from whatever start_date the client sent —
-    // prevents losing paid days on early renewal, and matches the +1-day convention
-    // the Renew dialog itself defaults to, so this fallback (normally only reached if
-    // staff manually backdates the field) can't produce a 1-day overlap with the
-    // membership it's superseding. A truly lapsed member (expiry already past) keeps
-    // the supplied date as-is.
-    const dayAfterCurrentExpiry = currentExpiry ? new Date(currentExpiry.getTime() + 24 * 60 * 60 * 1000) : null
+    // If membership is still active (expiry today or in the future), extend from that
+    // expiry date itself rather than from whatever earlier start_date the client sent —
+    // prevents losing paid days on early renewal, and matches the convention the Renew
+    // dialog itself defaults to, so this fallback (normally only reached if staff
+    // manually backdates the field) can't produce a start date before the membership
+    // it's superseding has even ended. A truly lapsed member (expiry already past)
+    // keeps the supplied date as-is.
     const effectiveStart =
-      dayAfterCurrentExpiry && dayAfterCurrentExpiry > requestedStart ? dayAfterCurrentExpiry : requestedStart
+      currentExpiry && currentExpiry > requestedStart ? currentExpiry : requestedStart
     const effectiveStartStr = effectiveStart.toISOString().slice(0, 10)
 
     // Mark existing active memberships as expired

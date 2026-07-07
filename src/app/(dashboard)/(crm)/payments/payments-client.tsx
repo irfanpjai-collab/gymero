@@ -26,7 +26,7 @@ import { formatDate, formatCurrency } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import SendReceiptButton from '@/components/shared/SendReceiptButton'
 import type { Payment, Member, MembershipPlan } from '@/types'
-import { differenceInDays, parseISO, addDays, format } from 'date-fns'
+import { differenceInDays, parseISO, format } from 'date-fns'
 
 const inputCls =
   'w-full px-3 py-2.5 bg-background border border-border hover:border-muted-foreground/30 focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/30 rounded-xl text-sm text-foreground placeholder:text-muted-foreground/50 transition-colors'
@@ -146,7 +146,7 @@ function RecordPaymentDialog({
       const days = differenceInDays(new Date(), expiryDateObj)
       setDaysSince(days)
       setNeedsAdmissionFee(days > gracePeriodDays)
-      setDate(days < 0 ? format(addDays(expiryDateObj, 1), 'yyyy-MM-dd') : today)
+      setDate(days < 0 ? format(expiryDateObj, 'yyyy-MM-dd') : today)
     }
   }
 
@@ -229,7 +229,7 @@ function RecordPaymentDialog({
     ? (() => {
         const d = new Date(date)
         d.setMonth(d.getMonth() + selectedPlan.duration_months)
-        return d.toLocaleDateString('en-GB')
+        return format(d, 'dd MMM yyyy')
       })()
     : null
 
@@ -292,7 +292,7 @@ function RecordPaymentDialog({
                   <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
                   <p className="text-xs text-red-300">
                     {lastExpiryDate ? (
-                      <>Membership expired on {new Date(lastExpiryDate).toLocaleDateString('en-GB')} ({daysSince} days ago) — beyond the {gracePeriodDays}-day grace period. An admission fee is required.</>
+                      <>Membership expired on {format(new Date(lastExpiryDate), 'dd MMM yyyy')} ({daysSince} days ago) — beyond the {gracePeriodDays}-day grace period. An admission fee is required.</>
                     ) : (
                       <>New member rejoining or has no membership history — an admission fee is required.</>
                     )}
