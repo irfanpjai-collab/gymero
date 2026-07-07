@@ -74,12 +74,6 @@ function Section({ title, icon: Icon, iconColor, members, type, emptyText }: {
   type: 'due_today' | 'due_in_3_days' | 'expired'
   emptyText: string
 }) {
-  const [allSent, setAllSent] = useState(false)
-  const handleSendAll = () => {
-    members.forEach(m => openWhatsApp(m, type))
-    setAllSent(true)
-    toast.success(`Opened ${members.length} WhatsApp reminders`)
-  }
   return (
     <div className="bg-card rounded-2xl border border-border overflow-hidden">
       <div className="flex items-center justify-between px-5 py-4 border-b border-border">
@@ -92,12 +86,6 @@ function Section({ title, icon: Icon, iconColor, members, type, emptyText }: {
             <p className="text-muted-foreground text-xs">{members.length} member{members.length !== 1 ? 's' : ''}</p>
           </div>
         </div>
-        {members.length > 0 && (
-          <button onClick={handleSendAll} disabled={allSent}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${allSent ? 'bg-primary/15 text-primary cursor-default' : 'bg-primary hover:bg-primary/90 text-white'}`}>
-            {allSent ? 'All Sent' : `Send All (${members.length})`}
-          </button>
-        )}
       </div>
       <div className="p-4 space-y-2">
         {members.length === 0 ? (
@@ -148,7 +136,7 @@ export default function WhatsAppPage() {
         <div>
           <p className="text-foreground text-sm font-medium">How WhatsApp reminders work</p>
           <p className="text-muted-foreground text-xs mt-0.5">
-            Clicking "Send" opens WhatsApp with a pre-filled message for the member. You can review and send from WhatsApp.
+            Clicking &quot;Send&quot; opens WhatsApp with a pre-filled message for the member. You can review and send from WhatsApp.
           </p>
         </div>
       </div>
