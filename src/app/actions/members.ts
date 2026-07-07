@@ -228,18 +228,25 @@ export async function updateMember(
     // a plain field edit — the device needs the old PIN's user record removed
     // and the new one pushed, and the member has to re-scan their fingerprint
     // physically (the old template doesn't follow the ID change).
+    const { data: current } = await supabase.from('members').select('member_id, full_name').eq('id', id).single()
+    const currentRow = current as { member_id: number; full_name: string } | null
+
     let oldMemberId: number | null = null
     const newMemberIdRaw = data.get('member_id') as string | null
     if (newMemberIdRaw !== null && newMemberIdRaw !== '') {
       const newMemberId = parseInt(newMemberIdRaw, 10)
       if (!newMemberId || newMemberId < 1) throw new Error('Member ID must be a positive number')
 
-      const { data: current } = await supabase.from('members').select('member_id').eq('id', id).single()
-      if (current && (current as { member_id: number }).member_id !== newMemberId) {
-        oldMemberId = (current as { member_id: number }).member_id
+      if (currentRow && currentRow.member_id !== newMemberId) {
+        oldMemberId = currentRow.member_id
         payload.member_id = newMemberId
       }
     }
+
+    // The device stores name against PIN — without this, correcting a typo
+    // in someone's name here would update the CRM but leave the machine
+    // showing the old name indefinitely.
+    const nameChanged = typeof payload.full_name === 'string' && currentRow && payload.full_name !== currentRow.full_name
 
     const { error } = await supabase.from('members').update(payload).eq('id', id)
 
@@ -250,6 +257,10 @@ export async function updateMember(
 
     if (oldMemberId !== null) {
       await removeMemberFromDevice(oldMemberId, profile.user_id)
+      await pushNewMembersToDevice([id], profile.user_id)
+    } else if (nameChanged) {
+      // Re-enroll just updates the device's stored name for this PIN — it
+      // doesn't touch or require re-scanning their fingerprint.
       await pushNewMembersToDevice([id], profile.user_id)
     }
 
