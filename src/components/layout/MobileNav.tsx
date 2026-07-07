@@ -7,7 +7,7 @@ import {
   LayoutDashboard,
   Users,
   Landmark,
-  Fingerprint,
+  Receipt,
   Settings,
 } from 'lucide-react'
 
@@ -15,7 +15,7 @@ const navItems = [
   { href: '/dashboard', icon: LayoutDashboard, label: 'Home'     },
   { href: '/members',   icon: Users,           label: 'Members'  },
   { href: '/accounts',  icon: Landmark,        label: 'Accounts' },
-  { href: '/biometric', icon: Fingerprint,     label: 'Finger'   },
+  { href: '/expenses',  icon: Receipt,         label: 'Expenses' },
   { href: '/settings',  icon: Settings,        label: 'Settings' },
 ]
 
