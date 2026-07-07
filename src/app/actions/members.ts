@@ -425,6 +425,20 @@ export async function importMembers(
   return { imported, errors }
 }
 
+// Busts the Members/Dashboard cache without requiring any actual member data
+// change — needed because a row edited or deleted directly in the Supabase
+// table editor (or any other out-of-band change) never runs this app's own
+// code, so nothing would otherwise call revalidateTag. The Realtime listener
+// on the Members page (see members-realtime-refresh.tsx) calls this the
+// instant it detects any members/memberships change, before asking the
+// browser to refresh — otherwise the browser would just re-fetch the same
+// stale unstable_cache'd result.
+export async function revalidateMembersData(): Promise<void> {
+  revalidateTag('members', {})
+  revalidatePath('/members')
+  revalidatePath('/dashboard')
+}
+
 export async function getNextMemberId(): Promise<number> {
   try {
     const supabase = await createClient()

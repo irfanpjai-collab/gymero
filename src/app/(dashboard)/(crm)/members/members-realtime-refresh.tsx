@@ -3,6 +3,7 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { revalidateMembersData } from '@/app/actions/members'
 
 // Re-fetches the Members page's server data the instant a member or
 // membership row changes — without this, someone with the page already open
@@ -10,6 +11,11 @@ import { createClient } from '@/lib/supabase/client'
 // on-submit trigger, or the nightly cron) until they manually reloaded.
 // Debounced since a sheet sync can write many rows in one batch — no need to
 // re-render the page once per row.
+//
+// Also covers changes made completely outside the app (e.g. deleting a row
+// directly in the Supabase table editor) — those never call revalidateTag
+// themselves, so router.refresh() alone would just re-fetch the same stale
+// cached result. revalidateMembersData() busts that first.
 export default function MembersRealtimeRefresh() {
   const router = useRouter()
 
@@ -19,7 +25,9 @@ export default function MembersRealtimeRefresh() {
 
     const scheduleRefresh = () => {
       if (timer) clearTimeout(timer)
-      timer = setTimeout(() => router.refresh(), 600)
+      timer = setTimeout(() => {
+        revalidateMembersData().then(() => router.refresh())
+      }, 600)
     }
 
     const channel = supabase
