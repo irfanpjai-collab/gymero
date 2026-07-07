@@ -16,6 +16,7 @@ import { Badge } from '@/components/ui/badge'
 import SyncFormIntakeButton from './sync-form-intake-button'
 import MembersSearchInput from './search-input'
 import IntakeIssuesSection from './intake-issues-section'
+import MembersRealtimeRefresh from './members-realtime-refresh'
 import type { Member } from '@/types'
 
 const PAGE_SIZE = 20
@@ -312,6 +313,8 @@ export default async function MembersPage({ searchParams }: { searchParams: Sear
 
   return (
     <div className="space-y-5">
+      <MembersRealtimeRefresh />
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex items-center gap-3">
