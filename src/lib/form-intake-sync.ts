@@ -121,6 +121,36 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
     .in('duration_months', [1, 3])
   const planByDuration = new Map((plans ?? []).map(p => [p.duration_months, p]))
 
+  // The sheet keeps every form submission ever made, so this list only grows —
+  // looking each one up individually (1 round trip per row, then another to
+  // check for an existing membership) was the whole reason this sync got
+  // slower every month. Both lookups are batched into one query each here
+  // instead, so the loop below only ever does a round trip when it's actually
+  // writing something.
+  const allMemberIds = [...byId.keys()]
+  const existingByMemberId = new Map<number, { id: string; join_date: string | null }>()
+  const hasMembership = new Set<string>()
+  if (allMemberIds.length > 0) {
+    const { data: existingMembers } = await supabase
+      .from('members')
+      .select('id, member_id, join_date')
+      .in('member_id', allMemberIds)
+    for (const m of (existingMembers ?? []) as { id: string; member_id: number; join_date: string | null }[]) {
+      existingByMemberId.set(m.member_id, { id: m.id, join_date: m.join_date })
+    }
+
+    const existingUuids = [...existingByMemberId.values()].map(m => m.id)
+    if (existingUuids.length > 0) {
+      const { data: memberships } = await supabase
+        .from('memberships')
+        .select('member_id')
+        .in('member_id', existingUuids)
+      for (const row of (memberships ?? []) as { member_id: string }[]) {
+        hasMembership.add(row.member_id)
+      }
+    }
+  }
+
   // Shared by both the brand-new-member path and the retroactive path below —
   // only ever called when the member has zero memberships, so this can't
   // clobber a plan staff have since corrected by hand. Needs a real start
@@ -169,17 +199,7 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
     // Multiple rows for the same person (re-submission/edit) — the sheet's
     // last row for that ID is authoritative.
     const row = entries[entries.length - 1]
-
-    const { data: existing, error: lookupError } = await supabase
-      .from('members')
-      .select('id, join_date')
-      .eq('member_id', memberId)
-      .maybeSingle()
-
-    if (lookupError) {
-      result.errors.push(`Member ID ${memberId}: lookup failed — ${lookupError.message}`)
-      continue
-    }
+    const existing = existingByMemberId.get(memberId)
 
     const durationMonths = membershipDurationMonths(row.membershipMonth)
     const plan = durationMonths ? planByDuration.get(durationMonths) : undefined
@@ -200,18 +220,8 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
       // Covers syncing before MEMBERSHIP MONTH was filled in: if this member
       // still has no membership at all, and the sheet now specifies a valid
       // one, create it now instead of silently doing nothing.
-      const { count } = await supabase
-        .from('memberships')
-        .select('id', { count: 'exact', head: true })
-        .eq('member_id', (existing as { id: string }).id)
-      if (!count) {
-        const existingJoinDate = (existing as { join_date: string | null }).join_date
-        await createMembershipIfNone(
-          (existing as { id: string }).id,
-          memberId,
-          row.joinDate ?? existingJoinDate,
-          plan
-        )
+      if (!hasMembership.has(existing.id)) {
+        await createMembershipIfNone(existing.id, memberId, row.joinDate ?? existing.join_date, plan)
       }
       continue
     }
