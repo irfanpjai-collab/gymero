@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getSheetValues } from '@/lib/google-sheets'
+import { queueMissingEnrollments } from '@/lib/adms-enrollment'
 import { revalidateTag, revalidatePath } from 'next/cache'
 
 // Pulls new/edited rows from the gym's Google Form intake sheet (a *separate*
@@ -344,6 +345,18 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
   for (let i = 0; i < idEntries.length; i += CONCURRENCY) {
     const batch = idEntries.slice(i, i + CONCURRENCY)
     await Promise.all(batch.map(([memberId, entries]) => processMember(memberId, entries)))
+  }
+
+  // Pushes anyone not yet on the device — a brand-new member from this run,
+  // or anyone ever missed by another path — to the ADMS enroll queue. Errors
+  // here are logged but don't fail the sync itself (mirrors the same
+  // fire-and-forget device-push pattern used elsewhere, e.g.
+  // pushNewMembersToDevice in members.ts) — a CRM data sync succeeding
+  // shouldn't be reported as failed just because the device push had an issue.
+  try {
+    await queueMissingEnrollments(supabase, null)
+  } catch (err) {
+    console.error('form intake sync: queueMissingEnrollments failed —', err)
   }
 
   // Full replace, not an append — this table should only ever reflect the
