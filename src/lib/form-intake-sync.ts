@@ -354,39 +354,6 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
       return
     }
 
-    // Before treating this as a genuinely new person: the sync only ever
-    // sees the sheet's *current* state, so it can't tell "Member ID was
-    // edited from 1401 to 1402 for the same person" apart from "a real new
-    // person happens to submit next." Left unchecked, an in-place Member ID
-    // edit for someone who already exists would create a duplicate record
-    // under the new ID and silently leave the original behind. Same mobile
-    // number already registered under a different ID is treated as that
-    // signal — mobile is a much stronger duplicate-person indicator than
-    // name (which can legitimately repeat across different people).
-    const { data: mobileMatch } = await supabase
-      .from('members')
-      .select('member_id, full_name')
-      .eq('mobile', row.mobile)
-      .neq('member_id', memberId)
-      .order('member_id', { ascending: true })
-      .limit(1)
-      .maybeSingle()
-
-    if (mobileMatch) {
-      const match = mobileMatch as { member_id: number; full_name: string }
-      result.skipped++
-      result.warnings.push(
-        `Skipped Member ID ${memberId} (${row.name}): mobile ${row.mobile} already belongs to Member ID ${match.member_id} (${match.full_name})`
-      )
-      issues.push({
-        attemptedMemberId: String(memberId),
-        name: row.name,
-        mobile: row.mobile,
-        reason: `Same mobile number as Member ID ${match.member_id} (${match.full_name}) — if you meant to change their ID, edit it from their profile in the app, not the sheet, or this creates a duplicate`,
-      })
-      return
-    }
-
     // New member — a blank Join Date is left genuinely unknown (null) rather
     // than silently stamped with today's (sync) date.
     const insertPayload = { ...payload, member_id: memberId, join_date: row.joinDate ?? null } as Record<string, unknown>
