@@ -1,4 +1,5 @@
 import { formatDate, formatCurrency } from '@/lib/utils'
+import { logWhatsAppMessage } from '@/app/actions/whatsapp'
 import type { Payment } from '@/types'
 
 // Deliberately not a stored image/PDF — WhatsApp messages are plain text
@@ -40,4 +41,19 @@ export function buildReceiptMessage(payment: Payment): string {
   lines.push('Thank you for your payment!')
 
   return lines.join('\n')
+}
+
+// Shared by SendReceiptButton and any flow that wants to offer sending a
+// receipt right after the payment that created it (e.g. RenewDialog) — only
+// ever called from client-side event handlers, never during render/SSR.
+export function sendReceiptViaWhatsApp(payment: Payment): boolean {
+  const phone = payment.member?.mobile
+  if (!phone) return false
+
+  const message = buildReceiptMessage(payment)
+  const cleanedPhone = '91' + phone.replace(/\D/g, '').replace(/^0/, '')
+  const url = `https://wa.me/${cleanedPhone}?text=${encodeURIComponent(message)}`
+  window.open(url, '_blank')
+  logWhatsAppMessage(payment.member_id, phone, message, 'receipt').catch(console.error)
+  return true
 }

@@ -13,6 +13,8 @@ import {
 } from '@/components/ui/dialog'
 import { renewMembership, getPlans, getLastMembershipExpiry } from '@/app/actions/memberships'
 import { getGracePeriodDays } from '@/app/actions/settings'
+import { getPayments } from '@/app/actions/payments'
+import { sendReceiptViaWhatsApp } from '@/lib/receipt'
 import type { MembershipPlan } from '@/types'
 import { differenceInDays, parseISO, addDays, format } from 'date-fns'
 
@@ -177,9 +179,25 @@ export default function RenewDialog({
         return
       }
 
-      toast.success('Membership renewed successfully!')
       setOpen(false)
       router.refresh()
+
+      // The membership payment just inserted is the most recent one for this
+      // member — fetched fresh rather than threaded through renewMembership's
+      // return value, so this reuses the exact same query (and join shape)
+      // the Payments page's own Send Receipt button already relies on.
+      const payments = await getPayments(memberId)
+      const latestPayment = payments[0]
+      if (latestPayment?.member?.mobile) {
+        toast.success('Membership renewed successfully!', {
+          action: {
+            label: 'Send Receipt',
+            onClick: () => sendReceiptViaWhatsApp(latestPayment),
+          },
+        })
+      } else {
+        toast.success('Membership renewed successfully!')
+      }
     })
   }
 
