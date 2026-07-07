@@ -11,13 +11,18 @@ import { revalidateTag, revalidatePath } from 'next/cache'
 // Place, JOIN DATE, MEMBERSHIP MONTH. Dates are DD/MM/YYYY (day-first, same
 // convention as the rest of this app).
 //
-// On first creation only (never on update, so it can't clobber anything staff
-// have since changed by hand), also creates a real membership for a
-// recognized MEMBERSHIP MONTH value (1=Monthly, 3=Quarterly) — these are
-// treated as already paid in cash outside the system, so payment_pending is
-// false, but deliberately no `payments` row is inserted: revenue/accounts
-// figures should only reflect payments actually recorded through the UI, not
-// an automated import.
+// Also creates a real membership for a recognized MEMBERSHIP MONTH value
+// (1=Monthly, 3=Quarterly) — these are treated as already paid in cash
+// outside the system, so payment_pending is false, but deliberately no
+// `payments` row is inserted: revenue/accounts figures should only reflect
+// payments actually recorded through the UI, not an automated import.
+//
+// A later edit to MEMBERSHIP MONTH is picked up on re-sync too — but only
+// while that membership is still exactly as this sync left it (the member's
+// only membership row ever). The instant a member has renewed, or had their
+// membership corrected in the app, they get a second row and this backs off
+// permanently, so a stray sheet edit can never clobber real transaction
+// history — see reconcileMembershipPlan.
 
 const TAB_RANGE = "'Form responses 1'!A2:G"
 
@@ -127,9 +132,10 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
   // slower every month. Both lookups are batched into one query each here
   // instead, so the loop below only ever does a round trip when it's actually
   // writing something.
+  type MembershipRow = { id: string; member_id: string; plan_id: string; start_date: string }
   const allMemberIds = [...byId.keys()]
   const existingByMemberId = new Map<number, { id: string; join_date: string | null }>()
-  const hasMembership = new Set<string>()
+  const membershipsByMember = new Map<string, MembershipRow[]>()
   if (allMemberIds.length > 0) {
     const { data: existingMembers } = await supabase
       .from('members')
@@ -143,10 +149,12 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
     if (existingUuids.length > 0) {
       const { data: memberships } = await supabase
         .from('memberships')
-        .select('member_id')
+        .select('id, member_id, plan_id, start_date')
         .in('member_id', existingUuids)
-      for (const row of (memberships ?? []) as { member_id: string }[]) {
-        hasMembership.add(row.member_id)
+      for (const row of (memberships ?? []) as MembershipRow[]) {
+        const list = membershipsByMember.get(row.member_id) ?? []
+        list.push(row)
+        membershipsByMember.set(row.member_id, list)
       }
     }
   }
@@ -186,6 +194,29 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
     if (error) result.errors.push(`Member ID ${memberIdForLog}: membership creation failed — ${error.message}`)
   }
 
+  // Corrects a membership's plan/expiry to match a since-edited MEMBERSHIP
+  // MONTH — but only when this member has exactly one membership row, i.e.
+  // nothing has touched it since this sync created it (no renewal, no manual
+  // correction in the app). The moment a member has any renewal history,
+  // this backs off entirely and never touches their membership again, same
+  // guarantee as before.
+  async function reconcileMembershipPlan(
+    membership: MembershipRow,
+    memberIdForLog: number,
+    plan: { id: string; duration_months: number; fee: number } | undefined
+  ): Promise<void> {
+    if (!plan || membership.plan_id === plan.id) return
+
+    const expiry = new Date(membership.start_date)
+    expiry.setMonth(expiry.getMonth() + plan.duration_months)
+
+    const { error } = await supabase
+      .from('memberships')
+      .update({ plan_id: plan.id, amount: plan.fee, expiry_date: expiry.toISOString().slice(0, 10) })
+      .eq('id', membership.id)
+    if (error) result.errors.push(`Member ID ${memberIdForLog}: membership plan update failed — ${error.message}`)
+  }
+
   // Each Member ID is independent (the `byId` grouping above already collapsed
   // any duplicate rows per ID), so these can safely run concurrently instead
   // of waiting for one row's writes to finish before starting the next.
@@ -222,11 +253,18 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
       }
       result.updated++
 
-      // Covers syncing before MEMBERSHIP MONTH was filled in: if this member
-      // still has no membership at all, and the sheet now specifies a valid
-      // one, create it now instead of silently doing nothing.
-      if (!hasMembership.has(existing.id)) {
+      const memberships = membershipsByMember.get(existing.id) ?? []
+      if (memberships.length === 0) {
+        // Covers syncing before MEMBERSHIP MONTH was filled in: if this
+        // member still has no membership at all, and the sheet now
+        // specifies a valid one, create it now instead of silently doing
+        // nothing.
         await createMembershipIfNone(existing.id, memberId, row.joinDate ?? existing.join_date, plan)
+      } else if (memberships.length === 1) {
+        // Covers a corrected MEMBERSHIP MONTH for a member who hasn't
+        // renewed or been manually corrected since — see
+        // reconcileMembershipPlan for the safety reasoning.
+        await reconcileMembershipPlan(memberships[0], memberId, plan)
       }
       return
     }
