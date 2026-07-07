@@ -193,7 +193,7 @@ async function MembersTable({
                     <th className="text-left px-5 py-3 text-muted-foreground font-medium text-xs uppercase tracking-wider">Name</th>
                     <th className="text-left px-4 py-3 text-muted-foreground font-medium text-xs uppercase tracking-wider">Mobile</th>
                     <th className="text-left px-4 py-3 text-muted-foreground font-medium text-xs uppercase tracking-wider">Gender</th>
-                    <th className="text-left px-4 py-3 text-muted-foreground font-medium text-xs uppercase tracking-wider">Joined</th>
+                    <th className="text-left px-4 py-3 text-muted-foreground font-medium text-xs uppercase tracking-wider">Start Date</th>
                     <th className="text-left px-4 py-3 text-muted-foreground font-medium text-xs uppercase tracking-wider">Status</th>
                     <th className="text-left px-4 py-3 text-muted-foreground font-medium text-xs uppercase tracking-wider">Expiry</th>
                     <th className="text-left px-4 py-3 text-muted-foreground font-medium text-xs uppercase tracking-wider">Last Checked</th>
@@ -223,7 +223,7 @@ async function MembersTable({
                         </td>
                         <td className="px-4 py-3.5 text-muted-foreground">{member.mobile}</td>
                         <td className="px-4 py-3.5 text-muted-foreground capitalize">{member.gender}</td>
-                        <td className="px-4 py-3.5 text-muted-foreground whitespace-nowrap">{member.join_date ? formatDate(member.join_date) : '—'}</td>
+                        <td className="px-4 py-3.5 text-muted-foreground whitespace-nowrap">{member.active_membership?.start_date ? formatDate(member.active_membership.start_date) : '—'}</td>
                         <td className="px-4 py-3.5"><StatusBadge member={member} gracePeriodDays={gracePeriodDays} /></td>
                         <td className="px-4 py-3.5 text-muted-foreground whitespace-nowrap">
                           {expiryDate ? formatDate(expiryDate) : '—'}
