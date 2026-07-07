@@ -7,7 +7,7 @@ import './globals.css'
 const inter = Inter({ subsets: ['latin'], variable: '--font-sans' })
 
 export const metadata: Metadata = {
-  title: 'Fitness – Gym Management',
+  title: 'GreenPowerGym',
   description: 'Professional Gym ERP & CRM for managing members, memberships, payments, and more.',
 }
 
