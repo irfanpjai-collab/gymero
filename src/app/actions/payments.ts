@@ -15,13 +15,13 @@ export async function getPayments(memberId?: string): Promise<Payment[]> {
       .select(`
         *,
         member:members!payments_member_id_fkey(
-          id, full_name, member_id
+          id, full_name, member_id, mobile
         ),
         membership:memberships!payments_membership_id_fkey(
-          id, plan:membership_plans(name, duration_months)
+          id, expiry_date, plan:membership_plans(name, duration_months)
         ),
         pt_membership:pt_memberships!payments_pt_membership_id_fkey(
-          id, plan:pt_plans(name, duration_months)
+          id, expiry_date, plan:pt_plans(name, duration_months)
         )
       `)
       .order('payment_date', { ascending: false })

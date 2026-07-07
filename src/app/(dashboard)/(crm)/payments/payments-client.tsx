@@ -18,6 +18,7 @@ import { getPayments, getMonthlyRevenue, getPaymentsSummary, recordPayment } fro
 import { getMembers } from '@/app/actions/members'
 import { formatDate, formatCurrency } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
+import SendReceiptButton from '@/components/shared/SendReceiptButton'
 import type { Payment, Member } from '@/types'
 
 const inputCls =
@@ -353,8 +354,8 @@ export default function PaymentsClient({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border">
-                  {['Date', 'Member', 'Type', 'Plan', 'Amount', 'Method', 'Receipt #', ''].map((h) => (
-                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  {['Date', 'Member', 'Type', 'Plan', 'Amount', 'Method', 'Receipt #', '', ''].map((h, i) => (
+                    <th key={i} className="px-4 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                       {h}
                     </th>
                   ))}
@@ -394,6 +395,7 @@ export default function PaymentsClient({
                         </span>
                       )}
                     </td>
+                    <td className="px-4 py-3"><SendReceiptButton payment={p} /></td>
                   </tr>
                 ))}
               </tbody>

@@ -30,6 +30,7 @@ import RenewDialog from './renew-dialog'
 import { PtDialog, CancelPtButton } from './pt-dialog'
 import EditExpiryDialog from './edit-expiry-dialog'
 import AddJoinDateDialog from './add-join-date-dialog'
+import SendReceiptButton from '@/components/shared/SendReceiptButton'
 import type { Payment } from '@/types'
 
 const PUNCH_LABELS: Record<number, string> = {
@@ -453,6 +454,8 @@ export default async function MemberDetailPage({
                       <th className="text-left px-5 py-3 text-muted-foreground font-medium text-xs uppercase tracking-wider">
                         Receipt #
                       </th>
+                      <th className="text-left px-4 py-3 text-muted-foreground font-medium text-xs uppercase tracking-wider">
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
@@ -489,6 +492,9 @@ export default async function MemberDetailPage({
                         </td>
                         <td className="px-5 py-3.5 text-muted-foreground font-mono text-xs">
                           {payment.receipt_number ?? '—'}
+                        </td>
+                        <td className="px-4 py-3.5">
+                          <SendReceiptButton payment={payment} />
                         </td>
                       </tr>
                     ))}
