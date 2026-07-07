@@ -264,13 +264,16 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
     if (error) result.errors.push(`Member ID ${memberIdForLog}: membership update failed — ${error.message}`)
   }
 
-  // Pushed to the device at the end — a targeted insert for just these new
-  // members, not a full "scan every member/attendance/command row" catch-up
-  // (that's what made every single Apps Script trigger slow, re-checking
-  // ~70 members' device status on every single edit regardless of which row
-  // changed). Anyone still missed entirely (e.g. from before this existed)
-  // is still caught by the "Bulk Enroll" button on the Biometric page.
-  const newlyCreated: { member_id: number; full_name: string }[] = []
+  // Pushed to the device at the end — a targeted insert for just the members
+  // that actually need it this run (new, or renamed), not a full "scan every
+  // member/attendance/command row" catch-up (that's what made every single
+  // Apps Script trigger slow, re-checking ~70 members' device status on
+  // every single edit regardless of which row changed). Anyone still missed
+  // entirely (e.g. from before this existed) is still caught by the "Bulk
+  // Enroll" button on the Biometric page. Re-sending 'enroll' for an
+  // existing PIN just updates the device's stored name — it doesn't touch
+  // or require re-scanning their fingerprint, which is keyed to the PIN.
+  const toPushToDevice: { member_id: number; full_name: string }[] = []
 
   // Each Member ID is independent (the `byId` grouping above already collapsed
   // any duplicate rows per ID), so these can safely run concurrently instead
@@ -316,8 +319,9 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
       // checks below already have their own change-detection and stay cheap
       // no-ops regardless.
       const addressValue = row.place || null
+      const nameChanged = row.name !== existing.full_name
       const changed =
-        row.name !== existing.full_name ||
+        nameChanged ||
         row.mobile !== existing.mobile ||
         addressValue !== existing.address ||
         (!!row.joinDate && row.joinDate !== existing.join_date)
@@ -329,6 +333,9 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
           return
         }
         result.updated++
+        // The device stores name against PIN — a name correction here would
+        // otherwise silently drift from what's shown at the machine.
+        if (nameChanged) toPushToDevice.push({ member_id: memberId, full_name: row.name })
       }
 
       const memberships = membershipsByMember.get(existing.id) ?? []
@@ -347,6 +354,39 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
       return
     }
 
+    // Before treating this as a genuinely new person: the sync only ever
+    // sees the sheet's *current* state, so it can't tell "Member ID was
+    // edited from 1401 to 1402 for the same person" apart from "a real new
+    // person happens to submit next." Left unchecked, an in-place Member ID
+    // edit for someone who already exists would create a duplicate record
+    // under the new ID and silently leave the original behind. Same mobile
+    // number already registered under a different ID is treated as that
+    // signal — mobile is a much stronger duplicate-person indicator than
+    // name (which can legitimately repeat across different people).
+    const { data: mobileMatch } = await supabase
+      .from('members')
+      .select('member_id, full_name')
+      .eq('mobile', row.mobile)
+      .neq('member_id', memberId)
+      .order('member_id', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+
+    if (mobileMatch) {
+      const match = mobileMatch as { member_id: number; full_name: string }
+      result.skipped++
+      result.warnings.push(
+        `Skipped Member ID ${memberId} (${row.name}): mobile ${row.mobile} already belongs to Member ID ${match.member_id} (${match.full_name})`
+      )
+      issues.push({
+        attemptedMemberId: String(memberId),
+        name: row.name,
+        mobile: row.mobile,
+        reason: `Same mobile number as Member ID ${match.member_id} (${match.full_name}) — if you meant to change their ID, edit it from their profile in the app, not the sheet, or this creates a duplicate`,
+      })
+      return
+    }
+
     // New member — a blank Join Date is left genuinely unknown (null) rather
     // than silently stamped with today's (sync) date.
     const insertPayload = { ...payload, member_id: memberId, join_date: row.joinDate ?? null } as Record<string, unknown>
@@ -360,7 +400,7 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
       return
     }
     result.created++
-    newlyCreated.push({ member_id: memberId, full_name: row.name })
+    toPushToDevice.push({ member_id: memberId, full_name: row.name })
 
     await createMembershipIfNone((inserted as { id: string }).id, memberId, row.joinDate, plan)
   }
@@ -372,12 +412,12 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
     await Promise.all(batch.map(([memberId, entries]) => processMember(memberId, entries)))
   }
 
-  // Push just this run's new members to the device — errors logged but
+  // Push this run's new/renamed members to the device — errors logged but
   // don't fail the sync itself, same fire-and-forget pattern as
   // pushNewMembersToDevice in members.ts.
-  if (newlyCreated.length > 0) {
+  if (toPushToDevice.length > 0) {
     const { error } = await supabase.from('adms_commands').insert(
-      newlyCreated.map(m => ({ operation: 'enroll' as const, member_id: m.member_id, full_name: m.full_name }))
+      toPushToDevice.map(m => ({ operation: 'enroll' as const, member_id: m.member_id, full_name: m.full_name }))
     )
     if (error) console.error('form intake sync: device enroll queue failed —', error.message)
   }
