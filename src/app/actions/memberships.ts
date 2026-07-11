@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth'
 import { revalidatePath, revalidateTag } from 'next/cache'
 import { syncPaymentsSheet } from '@/lib/sheets-backup'
+import { getExpiryDateFromPlan } from '@/lib/utils'
 import type { MembershipPlan } from '@/types'
 
 export async function getPlans(): Promise<MembershipPlan[]> {
@@ -65,9 +66,7 @@ export async function createMembership(data: {
       throw new Error(`Amount (₹${data.amount}) differs from the plan price (₹${fee}) — please add a note explaining why`)
     }
 
-    const startDate = new Date(data.start_date)
-    const expiryDate = new Date(startDate)
-    expiryDate.setMonth(expiryDate.getMonth() + durationMonths)
+    const expiryDateStr = getExpiryDateFromPlan(data.start_date, durationMonths)
 
     const { data: inserted, error } = await supabase
       .from('memberships')
@@ -75,7 +74,7 @@ export async function createMembership(data: {
         member_id: data.member_id,
         plan_id: data.plan_id,
         start_date: data.start_date,
-        expiry_date: expiryDate.toISOString().slice(0, 10),
+        expiry_date: expiryDateStr,
         amount: data.amount,
         amount_note: data.amount !== fee ? data.amount_note?.trim() : null,
         status: 'active',
@@ -187,8 +186,7 @@ export async function renewMembership(
       throw new Error(`Amount (₹${data.amount}) differs from the plan price (₹${fee}) — please add a note explaining why`)
     }
 
-    const expiryDate = new Date(effectiveStart)
-    expiryDate.setMonth(expiryDate.getMonth() + durationMonths)
+    const expiryDateStr = getExpiryDateFromPlan(effectiveStart, durationMonths)
 
     const { data: insertedMembership, error: insertError } = await supabase
       .from('memberships')
@@ -196,7 +194,7 @@ export async function renewMembership(
         member_id: memberId,
         plan_id: data.plan_id,
         start_date: effectiveStartStr,
-        expiry_date: expiryDate.toISOString().slice(0, 10),
+        expiry_date: expiryDateStr,
         amount: data.amount,
         amount_note: data.amount !== fee ? data.amount_note?.trim() : null,
         status: 'active',
@@ -252,6 +250,12 @@ export async function renewMembership(
     revalidatePath('/payments')
     return {}
   } catch (err) {
+    // Postgres unique-violation from memberships_one_active_per_member (see
+    // supabase/unique_active_membership.sql) — two renewals submitted for
+    // this member at nearly the same moment; the second one lost the race.
+    if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === '23505') {
+      return { error: 'This membership was just renewed (possibly from another tab/device). Refresh and check before renewing again.' }
+    }
     const message = err instanceof Error ? err.message : String(err)
     return { error: message }
   }

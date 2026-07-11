@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth'
 import { revalidatePath, revalidateTag } from 'next/cache'
+import { pickCurrentMembership, getExpiryDateFromPlan } from '@/lib/utils'
 import type { PtPlan } from '@/types'
 
 // PT is tracked entirely separately from the regular membership system —
@@ -76,36 +77,53 @@ export async function getCoachPtClients(coachId: string): Promise<PtClient[]> {
     const { data, error } = await supabase
       .from('pt_memberships')
       .select(`
-        id, expiry_date, status,
+        id, start_date, expiry_date, status,
         member:members!pt_memberships_member_id_fkey(id, member_id, full_name, mobile),
         plan:pt_plans!pt_memberships_plan_id_fkey(name)
       `)
       .eq('coach_id', coachId)
-      .order('expiry_date', { ascending: false })
 
     if (error) throw error
 
     const todayStr = new Date().toISOString().slice(0, 10)
     type Row = {
       id: string
+      start_date: string
       expiry_date: string
       status: 'active' | 'expired' | 'cancelled'
       member: { id: string; member_id: number; full_name: string; mobile: string } | null
       plan: { name: string } | null
     }
 
-    return ((data ?? []) as unknown as Row[])
-      .filter((row) => row.member)
-      .map((row) => ({
-        ptMembershipId: row.id,
-        memberId: row.member!.id,
-        memberNumber: row.member!.member_id,
-        fullName: row.member!.full_name,
-        mobile: row.member!.mobile,
-        planName: row.plan?.name ?? 'PT Plan',
-        expiryDate: row.expiry_date,
-        status: row.status === 'cancelled' ? 'cancelled' : row.expiry_date >= todayStr ? 'active' : 'expired',
-      }))
+    const rows = ((data ?? []) as unknown as Row[]).filter((row) => row.member)
+
+    // Unlike regular memberships, assigning a new PT package doesn't expire the
+    // old row — a renewed client can have several pt_memberships rows. Collapse
+    // to one entry per member (whichever row is actually current for them),
+    // otherwise a renewed client shows up twice: once active, once expired.
+    const byMember = new Map<string, Row[]>()
+    for (const row of rows) {
+      const list = byMember.get(row.member!.id) ?? []
+      list.push(row)
+      byMember.set(row.member!.id, list)
+    }
+
+    return Array.from(byMember.values()).flatMap((memberRows) => {
+      const current =
+        pickCurrentMembership(memberRows.filter((r) => r.status !== 'cancelled')) ??
+        pickCurrentMembership(memberRows)
+      if (!current) return []
+      return [{
+        ptMembershipId: current.id,
+        memberId: current.member!.id,
+        memberNumber: current.member!.member_id,
+        fullName: current.member!.full_name,
+        mobile: current.member!.mobile,
+        planName: current.plan?.name ?? 'PT Plan',
+        expiryDate: current.expiry_date,
+        status: current.status === 'cancelled' ? 'cancelled' : current.expiry_date >= todayStr ? 'active' : 'expired',
+      }]
+    })
   } catch (err) {
     console.error('getCoachPtClients error:', err)
     return []
@@ -121,43 +139,45 @@ export interface MemberPtInfo {
   status: 'active' | 'expired' | 'cancelled'
 }
 
-// The member detail page only needs the single most recent PT membership —
-// same "compute status against today" reasoning as getCoachPtClients.
+// The member detail page only needs whichever PT membership is actually
+// current — same "pick the row covering today, not just the newest row"
+// reasoning as pickCurrentMembership for regular memberships.
 export async function getMemberPt(memberId: string): Promise<MemberPtInfo | null> {
   try {
     const supabase = await createClient()
     const { data, error } = await supabase
       .from('pt_memberships')
       .select(`
-        id, expiry_date, status,
+        id, start_date, expiry_date, status,
         coach:coaches!pt_memberships_coach_id_fkey(id, name),
         plan:pt_plans!pt_memberships_plan_id_fkey(name)
       `)
       .eq('member_id', memberId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
 
     if (error) throw error
-    if (!data) return null
 
     type Row = {
       id: string
+      start_date: string
       expiry_date: string
       status: 'active' | 'expired' | 'cancelled'
       coach: { id: string; name: string } | null
       plan: { name: string } | null
     }
-    const row = data as unknown as Row
+    const rows = (data ?? []) as unknown as Row[]
+    const current =
+      pickCurrentMembership(rows.filter((r) => r.status !== 'cancelled')) ?? pickCurrentMembership(rows)
+    if (!current) return null
+
     const todayStr = new Date().toISOString().slice(0, 10)
 
     return {
-      ptMembershipId: row.id,
-      coachId: row.coach?.id ?? null,
-      coachName: row.coach?.name ?? null,
-      planName: row.plan?.name ?? 'PT Plan',
-      expiryDate: row.expiry_date,
-      status: row.status === 'cancelled' ? 'cancelled' : row.expiry_date >= todayStr ? 'active' : 'expired',
+      ptMembershipId: current.id,
+      coachId: current.coach?.id ?? null,
+      coachName: current.coach?.name ?? null,
+      planName: current.plan?.name ?? 'PT Plan',
+      expiryDate: current.expiry_date,
+      status: current.status === 'cancelled' ? 'cancelled' : current.expiry_date >= todayStr ? 'active' : 'expired',
     }
   } catch (err) {
     console.error('getMemberPt error:', err)
@@ -197,9 +217,7 @@ export async function assignPtMembership(data: {
       throw new Error(`Amount (₹${data.amount}) differs from the plan price (₹${fee}) — please add a note explaining why`)
     }
 
-    const startDate = new Date(data.start_date)
-    const expiryDate = new Date(startDate)
-    expiryDate.setMonth(expiryDate.getMonth() + durationMonths)
+    const expiryDateStr = getExpiryDateFromPlan(data.start_date, durationMonths)
 
     const { data: inserted, error } = await supabase
       .from('pt_memberships')
@@ -208,7 +226,7 @@ export async function assignPtMembership(data: {
         coach_id: data.coach_id,
         plan_id: data.plan_id,
         start_date: data.start_date,
-        expiry_date: expiryDate.toISOString().slice(0, 10),
+        expiry_date: expiryDateStr,
         amount: data.amount,
         amount_note: data.amount !== fee ? data.amount_note?.trim() : null,
         status: 'active',

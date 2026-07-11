@@ -22,6 +22,7 @@ import { createMembership, getPlans } from '@/app/actions/memberships'
 import { getNextMemberId } from '@/app/actions/members'
 import { getCoaches } from '@/app/actions/coaches'
 import { getPtPlans, assignPtMembership } from '@/app/actions/pt'
+import { getExpiryDateFromPlan } from '@/lib/utils'
 import type { MembershipPlan, Coach, PtPlan } from '@/types'
 
 // ─── Field wrapper ────────────────────────────────────────────────────────────
@@ -96,10 +97,13 @@ export default function NewMemberPage() {
       setMemberId(String(id))
       setMemberIdLoading(false)
     })
+    // localStorage isn't available during SSR, so this can't be computed
+    // during render without a hydration mismatch — must read after mount.
     const saved = localStorage.getItem('gym_settings')
     if (saved) {
       const parsed = JSON.parse(saved)
       if (parsed.admissionFee !== undefined) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setAdmissionFee(String(parsed.admissionFee))
       }
     }
@@ -112,10 +116,13 @@ export default function NewMemberPage() {
     }
   }, [addMembership, plans.length])
 
-  // Auto-fill amount when plan changes
+  // Auto-fills amount as a starting point when the plan changes — staff can
+  // still freely edit it afterward, so this has to be an effect (a value
+  // derived during render would overwrite their edit on every re-render).
   useEffect(() => {
     if (selectedPlanId && plans.length > 0) {
       const plan = plans.find((p) => p.id === selectedPlanId)
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       if (plan) setAmount(String(plan.fee))
     }
   }, [selectedPlanId, plans])
@@ -504,8 +511,7 @@ export default function NewMemberPage() {
                       {(() => {
                         const plan = plans.find((p) => p.id === selectedPlanId)
                         if (!plan) return null
-                        const expiry = new Date(startDate)
-                        expiry.setMonth(expiry.getMonth() + plan.duration_months)
+                        const expiry = new Date(getExpiryDateFromPlan(startDate, plan.duration_months))
                         return (
                           <>
                             Expiry:{' '}
@@ -646,8 +652,7 @@ export default function NewMemberPage() {
                       {(() => {
                         const plan = ptPlans.find((p) => p.id === selectedPtPlanId)
                         if (!plan) return null
-                        const expiry = new Date(ptStartDate)
-                        expiry.setMonth(expiry.getMonth() + plan.duration_months)
+                        const expiry = new Date(getExpiryDateFromPlan(ptStartDate, plan.duration_months))
                         return (
                           <>
                             Expiry:{' '}

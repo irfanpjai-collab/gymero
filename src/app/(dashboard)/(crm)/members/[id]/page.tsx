@@ -20,12 +20,9 @@ import {
   ShieldOff,
   History,
 } from 'lucide-react'
-import { getMember } from '@/app/actions/members'
-import { getPayments } from '@/app/actions/payments'
-import { getMemberAdmsInfo } from '@/app/actions/adms'
-import { getMemberPt } from '@/app/actions/pt'
-import { getMembershipHistory } from '@/app/actions/memberships'
-import { getCachedGracePeriodDays } from '@/lib/cached-queries'
+import { getCachedGracePeriodDays, getCachedMemberDetail } from '@/lib/cached-queries'
+import { revalidateMembersData } from '@/app/actions/members'
+import TableRealtimeRefresh from '@/components/shared/TableRealtimeRefresh'
 import { formatDate, formatCurrency, getMembershipStatus, getStatusColor, getDaysUntilExpiry, getDaysSinceExpiry } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import RenewDialog from './renew-dialog'
@@ -104,13 +101,9 @@ export default async function MemberDetailPage({
   const { id } = await params
   const { renew } = await searchParams
 
-  const [member, payments, biometric, pt, gracePeriodDays, membershipHistory] = await Promise.all([
-    getMember(id),
-    getPayments(id),
-    getMemberAdmsInfo(id),
-    getMemberPt(id),
+  const [{ member, payments, biometric, pt, membershipHistory }, gracePeriodDays] = await Promise.all([
+    getCachedMemberDetail(id),
     getCachedGracePeriodDays(),
-    getMembershipHistory(id),
   ])
 
   if (!member) notFound()
@@ -165,6 +158,11 @@ export default async function MemberDetailPage({
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
+      <TableRealtimeRefresh
+        channelName={`member_detail_${id}_live`}
+        tables={['members', 'memberships', 'payments', 'pt_memberships', 'attendance_logs', 'adms_commands', 'adms_fingerprints']}
+        onChange={revalidateMembersData}
+      />
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-start gap-4">
         <Link

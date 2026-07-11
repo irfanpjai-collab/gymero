@@ -1,6 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { getSheetValues } from '@/lib/google-sheets'
 import { revalidateTag, revalidatePath } from 'next/cache'
+import { getExpiryDateFromPlan } from '@/lib/utils'
 
 // Pulls new/edited rows from the gym's Google Form intake sheet (a *separate*
 // spreadsheet from the one-way backup in sheets-backup.ts — this direction is
@@ -205,14 +206,13 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
       return
     }
 
-    const expiry = new Date(startDate)
-    expiry.setMonth(expiry.getMonth() + plan.duration_months)
+    const expiryDateStr = getExpiryDateFromPlan(startDate, plan.duration_months)
 
     const { error } = await supabase.from('memberships').insert({
       member_id: memberUuid,
       plan_id: plan.id,
       start_date: startDate,
-      expiry_date: expiry.toISOString().slice(0, 10),
+      expiry_date: expiryDateStr,
       amount: plan.fee,
       status: 'active',
       payment_pending: false, // treated as already paid in cash — no `payments` row, so this stays out of Accounts
@@ -249,8 +249,7 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
     const startChanged = effectiveStart !== membership.start_date
     if (!planChanged && !startChanged) return
 
-    const expiry = new Date(effectiveStart)
-    expiry.setMonth(expiry.getMonth() + effectivePlan.duration_months)
+    const expiryDateStr = getExpiryDateFromPlan(effectiveStart, effectivePlan.duration_months)
 
     const { error } = await supabase
       .from('memberships')
@@ -258,7 +257,7 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
         plan_id: effectivePlan.id,
         amount: effectivePlan.fee,
         start_date: effectiveStart,
-        expiry_date: expiry.toISOString().slice(0, 10),
+        expiry_date: expiryDateStr,
       })
       .eq('id', membership.id)
     if (error) result.errors.push(`Member ID ${memberIdForLog}: membership update failed — ${error.message}`)

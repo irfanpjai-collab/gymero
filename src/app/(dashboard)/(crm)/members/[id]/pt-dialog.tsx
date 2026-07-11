@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dialog'
 import { assignPtMembership, cancelPtMembership, getPtPlans } from '@/app/actions/pt'
 import { getCoaches } from '@/app/actions/coaches'
+import { getExpiryDateFromPlan } from '@/lib/utils'
 import type { Coach, PtPlan } from '@/types'
 
 const today = new Date().toISOString().slice(0, 10)
@@ -107,11 +108,7 @@ export function PtDialog({
 
   const selectedPlan = plans.find((p) => p.id === planId)
   const expiryPreview = selectedPlan
-    ? (() => {
-        const d = new Date(startDate)
-        d.setMonth(d.getMonth() + selectedPlan.duration_months)
-        return d.toLocaleDateString('en-GB')
-      })()
+    ? new Date(getExpiryDateFromPlan(startDate, selectedPlan.duration_months)).toLocaleDateString('en-GB')
     : null
 
   return (

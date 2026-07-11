@@ -15,6 +15,7 @@ import { renewMembership, getPlans, getLastMembershipExpiry } from '@/app/action
 import { getGracePeriodDays } from '@/app/actions/settings'
 import { getPayments } from '@/app/actions/payments'
 import { sendReceiptViaWhatsApp } from '@/lib/receipt'
+import { getExpiryDateFromPlan } from '@/lib/utils'
 import type { MembershipPlan } from '@/types'
 import { differenceInDays, parseISO, format } from 'date-fns'
 
@@ -202,11 +203,7 @@ export default function RenewDialog({
 
   const selectedPlan = plans.find((p) => p.id === selectedPlanId)
   const expiryPreview = selectedPlan
-    ? (() => {
-        const d = new Date(startDate)
-        d.setMonth(d.getMonth() + selectedPlan.duration_months)
-        return format(d, 'dd MMM yyyy')
-      })()
+    ? format(new Date(getExpiryDateFromPlan(startDate, selectedPlan.duration_months)), 'dd MMM yyyy')
     : null
 
   return (

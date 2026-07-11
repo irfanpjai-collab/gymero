@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { subscribeToAttendanceInserts } from '@/lib/realtime/attendance-bus'
+import { pickCurrentMembership } from '@/lib/utils'
 import { LogIn, LogOut, X, CircleCheck, CircleX, Phone, CreditCard, CalendarClock } from 'lucide-react'
 
 interface PunchDetails {
@@ -39,15 +40,13 @@ export default function PunchNotifier() {
             supabase.from('members').select('full_name, member_id, mobile').eq('id', row.member_id).maybeSingle(),
             supabase
               .from('memberships')
-              .select('status, expiry_date')
-              .eq('member_id', row.member_id)
-              .order('expiry_date', { ascending: false })
-              .limit(1),
+              .select('status, start_date, expiry_date')
+              .eq('member_id', row.member_id),
           ])
 
-          const latest = memberships?.[0]
+          const current = pickCurrentMembership(memberships ?? [])
           const today = new Date().toISOString().split('T')[0]
-          const active = !!latest && latest.status === 'active' && latest.expiry_date >= today
+          const active = !!current && current.expiry_date >= today
 
           details = {
             fullName: member?.full_name ?? `Member #${row.device_user_id}`,
@@ -55,8 +54,8 @@ export default function PunchNotifier() {
             mobile: member?.mobile ?? '',
             punchType: row.punch_type,
             timestamp: row.punched_at,
-            membershipStatus: latest ? (active ? 'active' : 'expired') : 'none',
-            expiryDate: latest?.expiry_date ?? null,
+            membershipStatus: current ? (active ? 'active' : 'expired') : 'none',
+            expiryDate: current?.expiry_date ?? null,
           }
         } else {
           details = {

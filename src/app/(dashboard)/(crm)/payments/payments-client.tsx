@@ -22,7 +22,7 @@ import { getMembers } from '@/app/actions/members'
 import { getPlans, renewMembership, getLastMembershipExpiry } from '@/app/actions/memberships'
 import { getGracePeriodDays } from '@/app/actions/settings'
 import { sendReceiptViaWhatsApp } from '@/lib/receipt'
-import { formatDate, formatCurrency } from '@/lib/utils'
+import { formatDate, formatCurrency, getExpiryDateFromPlan } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import SendReceiptButton from '@/components/shared/SendReceiptButton'
 import type { Payment, Member, MembershipPlan } from '@/types'
@@ -226,11 +226,7 @@ function RecordPaymentDialog({
 
   const selectedPlan = plans.find((p) => p.id === selectedPlanId)
   const expiryPreview = type === 'membership' && selectedPlan
-    ? (() => {
-        const d = new Date(date)
-        d.setMonth(d.getMonth() + selectedPlan.duration_months)
-        return format(d, 'dd MMM yyyy')
-      })()
+    ? format(new Date(getExpiryDateFromPlan(date, selectedPlan.duration_months)), 'dd MMM yyyy')
     : null
 
   return createPortal(

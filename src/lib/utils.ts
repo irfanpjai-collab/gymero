@@ -1,6 +1,6 @@
 import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
-import { format, differenceInDays, isPast, isToday } from 'date-fns'
+import { format, differenceInDays, isPast, isToday, addMonths } from 'date-fns'
 
 /** Default grace period in days — members can rejoin without admission fee within this window */
 export const DEFAULT_GRACE_PERIOD_DAYS = 180
@@ -95,10 +95,13 @@ export function getTodayISO(): string {
   return format(new Date(), 'yyyy-MM-dd')
 }
 
-export function getExpiryDateFromPlan(startDate: string, durationMonths: number): string {
-  const start = new Date(startDate)
-  start.setMonth(start.getMonth() + durationMonths)
-  return format(start, 'yyyy-MM-dd')
+/**
+ * `date.setMonth(m + n)` overflows for day-of-month 29-31 starts that don't
+ * exist in the target month (Jan 31 + 1 month rolls to Mar 3, not Feb 28/29).
+ * date-fns' addMonths clamps to the target month's last day instead.
+ */
+export function getExpiryDateFromPlan(startDate: string | Date, durationMonths: number): string {
+  return format(addMonths(new Date(startDate), durationMonths), 'yyyy-MM-dd')
 }
 
 export function isDueToday(expiryDate: string): boolean {

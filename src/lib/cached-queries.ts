@@ -1,7 +1,10 @@
 import { unstable_cache } from 'next/cache'
 import { createAdminClient } from './supabase/admin'
-import { DEFAULT_GRACE_PERIOD_DAYS, getMembershipStatus } from './utils'
-import type { Member, DashboardStats, Payment, MembershipPlan, Coach, PtPlan } from '@/types'
+import { DEFAULT_GRACE_PERIOD_DAYS, getMembershipStatus, pickCurrentMembership } from './utils'
+import type { Member, DashboardStats, Payment, MembershipPlan, Coach, PtPlan, Membership, BiometricAttendance } from '@/types'
+import type { MemberAdmsInfo } from '@/app/actions/adms'
+import type { MemberPtInfo } from '@/app/actions/pt'
+import type { MembershipHistoryEntry } from '@/app/actions/memberships'
 
 // Cached DB reads using the admin (service-role) client so they can run
 // outside a request context. Tags bust when the corresponding mutations
@@ -53,9 +56,12 @@ const _getMembers = async (search?: string): Promise<Member[]> => {
   if (error) return []
 
   return ((data ?? []) as Record<string, unknown>[]).map((row) => {
-    const membership = Array.isArray(row.active_membership)
-      ? (row.active_membership as unknown[])[0] ?? null
+    const membershipRows = Array.isArray(row.active_membership)
+      ? (row.active_membership as unknown as Membership[])
       : row.active_membership
+      ? [row.active_membership as Membership]
+      : []
+    const membership = pickCurrentMembership(membershipRows)
     return { ...row, active_membership: membership } as Member
   })
 }
@@ -463,4 +469,255 @@ export const getCachedPtPlans = unstable_cache(
   _getPtPlans,
   ['pt-plans'],
   { tags: ['coaches'], revalidate: 300 }
+)
+
+// ── Reports ──────────────────────────────────────────────────────────────────
+// Members + payments only — deliberately excludes staff_salaries/expenses,
+// which are admin-only via RLS (security_hardening.sql). Those two are read
+// with the request-scoped client directly in getReportsOverview() instead of
+// here, since this cache uses the service-role admin client (bypasses RLS)
+// and unstable_cache's result isn't keyed by caller role — caching a
+// role-restricted read here would leak it to every other role on a cache hit.
+// members/payments SELECT is open to any authenticated user regardless of
+// role, so no such risk for this part.
+
+export interface ReportsMembersAndPayments {
+  members: Member[]
+  payments: Payment[]
+  monthlyRevenue: { month: string; revenue: number }[]
+}
+
+const _getReportsMembersAndPayments = async (): Promise<ReportsMembersAndPayments> => {
+  const supabase = createAdminClient()
+
+  const [{ data: members, error: membersErr }, { data: payments, error: paymentsErr }] = await Promise.all([
+    supabase
+      .from('members')
+      .select(`
+        *,
+        active_membership:memberships!memberships_member_id_fkey(
+          id, expiry_date, status, plan_id, start_date, amount, amount_note, created_at
+        )
+      `)
+      .is('deleted_at', null)
+      .order('expiry_date', { foreignTable: 'memberships', ascending: false })
+      .order('member_id', { ascending: true }),
+    // Unlimited — feeds Total Revenue/Net Profit stats and the full payments
+    // Excel export, not just a display list, so it can't be capped the way
+    // the Payments page's live transaction table is.
+    supabase
+      .from('payments')
+      .select(`*, member:members!payments_member_id_fkey(id, full_name, member_id)`)
+      .order('payment_date', { ascending: false }),
+  ])
+  if (membersErr || paymentsErr) return { members: [], payments: [], monthlyRevenue: [] }
+
+  const flatMembers = (members ?? []).map((row: Record<string, unknown>) => {
+    const membershipRows = Array.isArray(row.active_membership)
+      ? (row.active_membership as unknown as Membership[])
+      : row.active_membership
+      ? [row.active_membership as Membership]
+      : []
+    const membership = pickCurrentMembership(membershipRows)
+    return { ...row, active_membership: membership } as Member
+  })
+
+  const monthMap: Record<string, { total: number; minDate: Date }> = {}
+  for (const p of (payments ?? []) as { payment_date: string; amount: number }[]) {
+    const date = new Date(p.payment_date)
+    const key = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+    if (!monthMap[key]) monthMap[key] = { total: 0, minDate: date }
+    monthMap[key].total += p.amount
+  }
+  const monthlyRevenue = Object.entries(monthMap)
+    .map(([month, { total, minDate }]) => ({ month, revenue: total, _minDate: minDate }))
+    .sort((a, b) => b._minDate.getTime() - a._minDate.getTime())
+    .slice(0, 12)
+    .reverse()
+    .map(({ month, revenue }) => ({ month, revenue }))
+
+  return {
+    members: flatMembers,
+    payments: (payments ?? []) as unknown as Payment[],
+    monthlyRevenue,
+  }
+}
+
+export const getCachedReportsMembersAndPayments = unstable_cache(
+  _getReportsMembersAndPayments,
+  ['reports-members-payments'],
+  { tags: ['members', 'payments'], revalidate: 300 }
+)
+
+// ── Member detail page ──────────────────────────────────────────────────────
+// Combines what used to be 5 separate uncached round trips (getMember,
+// getPayments, getMemberAdmsInfo, getMemberPt, getMembershipHistory) into one
+// cached read, keyed per-member (unstable_cache includes the memberId
+// argument in its cache key automatically, same as _getMembers(search) above).
+// All of members/payments/memberships/pt_memberships/attendance_logs/
+// adms_commands/adms_fingerprints are read-open to any authenticated user
+// (no role restriction), so the service-role admin client here doesn't bypass
+// anything a logged-in coach/receptionist couldn't already read directly —
+// unlike the Reports page's salary/expense figures, there's no RLS-leak risk.
+// Freshness backed by TableRealtimeRefresh on the member detail page rather
+// than exhaustively tagging every mutation path — some writes here come from
+// the ADMS device webhook (src/app/api/adms/cdata/route.ts), which has no
+// user-initiated revalidateTag call to piggyback on.
+
+export interface MemberDetailData {
+  member: Member | null
+  payments: Payment[]
+  biometric: MemberAdmsInfo
+  pt: MemberPtInfo | null
+  membershipHistory: MembershipHistoryEntry[]
+}
+
+const EMPTY_ADMS_INFO: MemberAdmsInfo = { pushedToDevice: false, fingerprintEnrolled: false, checkIns: [] }
+
+const _getMemberDetail = async (memberId: string): Promise<MemberDetailData> => {
+  const supabase = createAdminClient()
+
+  const [
+    { data: memberRow },
+    { data: paymentRows },
+    { data: attendanceRows },
+    { data: ptRows },
+    { data: historyRows },
+  ] = await Promise.all([
+    supabase
+      .from('members')
+      .select(`
+        *,
+        active_membership:memberships!memberships_member_id_fkey(
+          id, expiry_date, status, plan_id, start_date, amount, amount_note, payment_pending, created_at
+        )
+      `)
+      .eq('id', memberId)
+      .maybeSingle(),
+    supabase
+      .from('payments')
+      .select(`
+        *,
+        member:members!payments_member_id_fkey(id, full_name, member_id, mobile),
+        membership:memberships!payments_membership_id_fkey(id, expiry_date, plan:membership_plans(name, duration_months)),
+        pt_membership:pt_memberships!payments_pt_membership_id_fkey(id, expiry_date, plan:pt_plans(name, duration_months))
+      `)
+      .eq('member_id', memberId)
+      .order('payment_date', { ascending: false })
+      .limit(100),
+    supabase
+      .from('attendance_logs')
+      .select('device_user_id, punched_at, punch_type, status')
+      .eq('member_id', memberId)
+      .order('punched_at', { ascending: false })
+      .limit(200),
+    supabase
+      .from('pt_memberships')
+      .select(`
+        id, start_date, expiry_date, status,
+        coach:coaches!pt_memberships_coach_id_fkey(id, name),
+        plan:pt_plans!pt_memberships_plan_id_fkey(name)
+      `)
+      .eq('member_id', memberId),
+    supabase
+      .from('memberships')
+      .select('id, start_date, expiry_date, amount, amount_note, status, created_at, plan:membership_plans(name)')
+      .eq('member_id', memberId)
+      .order('start_date', { ascending: false }),
+  ])
+
+  if (!memberRow) {
+    return { member: null, payments: [], biometric: EMPTY_ADMS_INFO, pt: null, membershipHistory: [] }
+  }
+
+  const membershipRows = Array.isArray((memberRow as Record<string, unknown>).active_membership)
+    ? ((memberRow as Record<string, unknown>).active_membership as unknown as Membership[])
+    : (memberRow as Record<string, unknown>).active_membership
+    ? [(memberRow as Record<string, unknown>).active_membership as Membership]
+    : []
+  const member = { ...memberRow, active_membership: pickCurrentMembership(membershipRows) } as Member
+
+  const checkIns: BiometricAttendance[] = (attendanceRows ?? []).map((l: { device_user_id: string; punched_at: string; status: number | null; punch_type: number | null }) => ({
+    user_id: l.device_user_id,
+    timestamp: l.punched_at,
+    status: l.status ?? 0,
+    punch: l.punch_type ?? 0,
+  }))
+
+  const memberNumber = (memberRow as unknown as { member_id: number }).member_id
+  let pushedToDevice = false
+  let fingerprintEnrolled = checkIns.length > 0
+  if (memberNumber != null) {
+    const [{ data: cmd }, { data: fp }] = await Promise.all([
+      supabase
+        .from('adms_commands')
+        .select('operation, status, created_at')
+        .eq('member_id', memberNumber)
+        .in('operation', ['enroll', 'remove'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from('adms_fingerprints')
+        .select('valid')
+        .eq('device_user_id', String(memberNumber))
+        .eq('valid', true)
+        .limit(1)
+        .maybeSingle(),
+    ])
+    pushedToDevice = cmd?.operation === 'enroll' && cmd.status === 'done'
+    fingerprintEnrolled = fingerprintEnrolled || !!fp
+  }
+
+  type PtRow = {
+    id: string
+    start_date: string
+    expiry_date: string
+    status: 'active' | 'expired' | 'cancelled'
+    coach: { id: string; name: string } | null
+    plan: { name: string } | null
+  }
+  const ptRowsTyped = (ptRows ?? []) as unknown as PtRow[]
+  const currentPt =
+    pickCurrentMembership(ptRowsTyped.filter((r) => r.status !== 'cancelled')) ??
+    pickCurrentMembership(ptRowsTyped)
+  const todayStr = new Date().toISOString().slice(0, 10)
+  const pt: MemberPtInfo | null = currentPt
+    ? {
+        ptMembershipId: currentPt.id,
+        coachId: currentPt.coach?.id ?? null,
+        coachName: currentPt.coach?.name ?? null,
+        planName: currentPt.plan?.name ?? 'PT Plan',
+        expiryDate: currentPt.expiry_date,
+        status: currentPt.status === 'cancelled' ? 'cancelled' : currentPt.expiry_date >= todayStr ? 'active' : 'expired',
+      }
+    : null
+
+  const membershipHistory: MembershipHistoryEntry[] = (historyRows ?? []).map((row) => {
+    const plan = Array.isArray(row.plan) ? row.plan[0] : row.plan
+    return {
+      id: row.id,
+      planName: (plan as { name: string } | null)?.name ?? 'Unknown Plan',
+      startDate: row.start_date,
+      expiryDate: row.expiry_date,
+      amount: row.amount,
+      amountNote: row.amount_note,
+      status: row.status,
+      createdAt: row.created_at,
+    }
+  })
+
+  return {
+    member,
+    payments: (paymentRows ?? []) as unknown as Payment[],
+    biometric: { pushedToDevice, fingerprintEnrolled, checkIns },
+    pt,
+    membershipHistory,
+  }
+}
+
+export const getCachedMemberDetail = unstable_cache(
+  _getMemberDetail,
+  ['member-detail'],
+  { tags: ['members'], revalidate: 300 }
 )
