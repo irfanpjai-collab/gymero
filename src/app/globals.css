@@ -85,6 +85,13 @@
   box-sizing: border-box;
 }
 
+/* Enlarges the whole UI proportionally — nearly everything (text sizes,
+   spacing, icon widths/heights) is defined in rem in Tailwind v4, so this
+   one change scales the entire app instead of touching every component. */
+html {
+  font-size: 112.5%; /* 18px at the browser's default 16px */
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
