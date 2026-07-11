@@ -1,6 +1,6 @@
 import { type ClassValue, clsx } from 'clsx'
 import { twMerge } from 'tailwind-merge'
-import { format, differenceInDays, isPast, isToday, addDays } from 'date-fns'
+import { format, differenceInDays, isPast, isToday } from 'date-fns'
 
 /** Default grace period in days — members can rejoin without admission fee within this window */
 export const DEFAULT_GRACE_PERIOD_DAYS = 180
@@ -33,6 +33,31 @@ export function getMembershipStatus(
   }
   if (differenceInDays(expiry, new Date()) <= 7) return 'expiring_soon'
   return 'active'
+}
+
+/**
+ * Renewing early inserts a new membership row immediately (with a future
+ * start_date) and marks the old one 'expired', so "the row with the highest
+ * expiry_date" would jump to that future row before it's actually begun.
+ * Prefer whichever row's date range actually covers today.
+ */
+export function pickCurrentMembership<T extends { start_date: string; expiry_date: string }>(
+  memberships: T[]
+): T | null {
+  if (!memberships.length) return null
+  const today = new Date().toISOString().slice(0, 10)
+
+  const inEffect = memberships.filter((m) => m.start_date <= today && today <= m.expiry_date)
+  if (inEffect.length) {
+    return inEffect.reduce((a, b) => (b.expiry_date > a.expiry_date ? b : a))
+  }
+
+  const started = memberships.filter((m) => m.start_date <= today)
+  if (started.length) {
+    return started.reduce((a, b) => (b.start_date > a.start_date ? b : a))
+  }
+
+  return memberships.reduce((a, b) => (b.start_date < a.start_date ? b : a))
 }
 
 export function getDaysUntilExpiry(expiryDate: string): number {

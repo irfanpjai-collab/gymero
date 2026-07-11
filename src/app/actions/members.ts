@@ -4,7 +4,8 @@ import { createClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth'
 import { revalidatePath, revalidateTag } from 'next/cache'
 import { syncMembersSheet, syncPaymentsSheet } from '@/lib/sheets-backup'
-import type { Member, ImportMemberRow } from '@/types'
+import { pickCurrentMembership } from '@/lib/utils'
+import type { Member, ImportMemberRow, Membership } from '@/types'
 
 // Queues an outbound-only ADMS enroll command — a plain DB insert, nothing
 // reaches out to the device at all from here. The device picks it up the next
@@ -86,11 +87,15 @@ export async function getMembers(search?: string): Promise<Member[]> {
 
     if (error) throw error
 
-    // Flatten active_membership: take first active membership if array
+    // Flatten active_membership: pick whichever row actually covers today
+    // (not just the one with the furthest-out expiry — see pickCurrentMembership).
     const members = (data ?? []).map((row: Record<string, unknown>) => {
-      const membership = Array.isArray(row.active_membership)
-        ? (row.active_membership as unknown[])[0] ?? null
+      const membershipRows = Array.isArray(row.active_membership)
+        ? (row.active_membership as unknown as Membership[])
         : row.active_membership
+        ? [row.active_membership as Membership]
+        : []
+      const membership = pickCurrentMembership(membershipRows)
       return { ...row, active_membership: membership } as Member
     })
 
@@ -121,9 +126,12 @@ export async function getMember(id: string): Promise<Member | null> {
 
     if (!data) return null
 
-    const membership = Array.isArray(data.active_membership)
-      ? (data.active_membership as unknown[])[0] ?? null
+    const membershipRows = Array.isArray(data.active_membership)
+      ? (data.active_membership as unknown as Membership[])
       : data.active_membership
+      ? [data.active_membership as Membership]
+      : []
+    const membership = pickCurrentMembership(membershipRows)
 
     return { ...(data as Record<string, unknown>), active_membership: membership } as Member
   } catch (err) {

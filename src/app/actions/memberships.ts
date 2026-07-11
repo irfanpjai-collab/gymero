@@ -332,6 +332,47 @@ export async function getLastMembershipExpiry(memberId: string): Promise<string 
   }
 }
 
+export interface MembershipHistoryEntry {
+  id: string
+  planName: string
+  startDate: string
+  expiryDate: string
+  amount: number
+  amountNote: string | null
+  status: 'active' | 'expired' | 'cancelled'
+  createdAt: string
+}
+
+export async function getMembershipHistory(memberId: string): Promise<MembershipHistoryEntry[]> {
+  try {
+    const supabase = await createClient()
+    const { data, error } = await supabase
+      .from('memberships')
+      .select('id, start_date, expiry_date, amount, amount_note, status, created_at, plan:membership_plans(name)')
+      .eq('member_id', memberId)
+      .order('start_date', { ascending: false })
+
+    if (error) throw error
+
+    return (data ?? []).map((row) => {
+      const plan = Array.isArray(row.plan) ? row.plan[0] : row.plan
+      return {
+        id: row.id,
+        planName: (plan as { name: string } | null)?.name ?? 'Unknown Plan',
+        startDate: row.start_date,
+        expiryDate: row.expiry_date,
+        amount: row.amount,
+        amountNote: row.amount_note,
+        status: row.status,
+        createdAt: row.created_at,
+      }
+    })
+  } catch (err) {
+    console.error('getMembershipHistory error:', err)
+    return []
+  }
+}
+
 // Corrects an existing membership's expiry_date in place — distinct from
 // renewMembership, which always creates a new row extending the period. This
 // is for fixing a mistake on the current record itself (wrong plan picked,

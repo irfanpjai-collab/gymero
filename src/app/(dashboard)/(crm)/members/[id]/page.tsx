@@ -18,11 +18,13 @@ import {
   LogOut,
   ShieldCheck,
   ShieldOff,
+  History,
 } from 'lucide-react'
 import { getMember } from '@/app/actions/members'
 import { getPayments } from '@/app/actions/payments'
 import { getMemberAdmsInfo } from '@/app/actions/adms'
 import { getMemberPt } from '@/app/actions/pt'
+import { getMembershipHistory } from '@/app/actions/memberships'
 import { getCachedGracePeriodDays } from '@/lib/cached-queries'
 import { formatDate, formatCurrency, getMembershipStatus, getStatusColor, getDaysUntilExpiry, getDaysSinceExpiry } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
@@ -102,12 +104,13 @@ export default async function MemberDetailPage({
   const { id } = await params
   const { renew } = await searchParams
 
-  const [member, payments, biometric, pt, gracePeriodDays] = await Promise.all([
+  const [member, payments, biometric, pt, gracePeriodDays, membershipHistory] = await Promise.all([
     getMember(id),
     getPayments(id),
     getMemberAdmsInfo(id),
     getMemberPt(id),
     getCachedGracePeriodDays(),
+    getMembershipHistory(id),
   ])
 
   if (!member) notFound()
@@ -408,6 +411,78 @@ export default async function MemberDetailPage({
                       : '—'}
                   </p>
                 </div>
+              </div>
+            )}
+          </div>
+
+          {/* Membership history */}
+          <div className="bg-card rounded-2xl border border-border overflow-hidden">
+            <div className="px-5 py-4 border-b border-border flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center">
+                <History className="w-3.5 h-3.5 text-primary" />
+              </div>
+              <h2 className="text-sm font-semibold text-foreground">Membership History</h2>
+              {membershipHistory.length > 0 && (
+                <span className="ml-auto text-xs text-muted-foreground">
+                  {membershipHistory.length} record{membershipHistory.length !== 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
+
+            {membershipHistory.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 text-center px-6">
+                <History className="w-10 h-10 text-muted-foreground/60 mb-3" />
+                <p className="text-muted-foreground text-sm font-medium">No membership history</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm min-w-[520px]">
+                  <thead>
+                    <tr className="border-b border-border bg-muted/20">
+                      <th className="text-left px-5 py-3 text-muted-foreground font-medium text-xs uppercase tracking-wider">
+                        Plan
+                      </th>
+                      <th className="text-left px-4 py-3 text-muted-foreground font-medium text-xs uppercase tracking-wider">
+                        Start
+                      </th>
+                      <th className="text-left px-4 py-3 text-muted-foreground font-medium text-xs uppercase tracking-wider">
+                        Expiry
+                      </th>
+                      <th className="text-left px-4 py-3 text-muted-foreground font-medium text-xs uppercase tracking-wider">
+                        Amount
+                      </th>
+                      <th className="text-left px-5 py-3 text-muted-foreground font-medium text-xs uppercase tracking-wider">
+                        Status
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {membershipHistory.map((h) => (
+                      <tr key={h.id} className="hover:bg-muted/40 transition-colors">
+                        <td className="px-5 py-3.5 text-foreground font-medium">{h.planName}</td>
+                        <td className="px-4 py-3.5 text-muted-foreground whitespace-nowrap">{formatDate(h.startDate)}</td>
+                        <td className="px-4 py-3.5 text-muted-foreground whitespace-nowrap">{formatDate(h.expiryDate)}</td>
+                        <td className="px-4 py-3.5">
+                          <span className="font-semibold text-foreground">{formatCurrency(h.amount)}</span>
+                          {h.amountNote && (
+                            <p className="text-xs text-amber-400 mt-0.5" title={h.amountNote}>Price adjusted</p>
+                          )}
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <Badge className={`border text-xs ${
+                            h.status === 'active'
+                              ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+                              : h.status === 'cancelled'
+                              ? 'text-muted-foreground bg-slate-500/10 border-slate-500/20'
+                              : 'text-red-400 bg-red-500/10 border-red-500/20'
+                          }`}>
+                            {h.status === 'active' ? 'Active' : h.status === 'cancelled' ? 'Cancelled' : 'Expired'}
+                          </Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>

@@ -2,17 +2,16 @@
 
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { 
-  Search, 
-  Check, 
-  UserPlus, 
-  IndianRupee, 
-  MessageSquare, 
-  Clock, 
-  UserCheck, 
-  Flame, 
+import {
+  Search,
+  UserPlus,
+  IndianRupee,
+  MessageSquare,
+  Clock,
+  Flame,
   X,
-  Sparkles
+  Sparkles,
+  ChevronRight,
 } from 'lucide-react'
 
 interface Member {
@@ -47,9 +46,6 @@ export default function WelcomeBanner({ members, gracePeriodDays }: { members: M
   const [greeting, setGreeting] = useState('')
   const [quote, setQuote] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
-  const [searchResults, setSearchResults] = useState<Member[]>([])
-  const [checkedInList, setCheckedInList] = useState<Array<{ id: string; name: string; time: string }>>([])
-  const [toast, setToast] = useState<string | null>(null)
 
   // Initialize clock and greeting
   useEffect(() => {
@@ -76,30 +72,29 @@ export default function WelcomeBanner({ members, gracePeriodDays }: { members: M
 
     updateClock()
     const timer = setInterval(updateClock, 1000)
-    
-    // Choose random quote
+
+    // Random quote is picked client-side only, after mount, so the server-rendered
+    // markup (which has no quote) matches the client's first render and avoids a
+    // hydration mismatch.
     const randomQuote = MOTIVATIONAL_QUOTES[Math.floor(Math.random() * MOTIVATIONAL_QUOTES.length)]
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setQuote(randomQuote)
 
     return () => clearInterval(timer)
   }, [])
 
-  // Handle Search
-  useEffect(() => {
-    if (!searchQuery.trim()) {
-      setSearchResults([])
-      return
-    }
-
-    const query = searchQuery.toLowerCase()
-    const filtered = members.filter(member => 
-      member.full_name.toLowerCase().includes(query) ||
-      member.member_id.toString().includes(query) ||
-      member.mobile.includes(query)
-    ).slice(0, 4) // Show top 4 results
-
-    setSearchResults(filtered)
-  }, [searchQuery, members])
+  const searchResults = searchQuery.trim()
+    ? members
+        .filter(member => {
+          const query = searchQuery.toLowerCase()
+          return (
+            member.full_name.toLowerCase().includes(query) ||
+            member.member_id.toString().includes(query) ||
+            member.mobile.includes(query)
+          )
+        })
+        .slice(0, 4) // Show top 4 results
+    : []
 
   // Get status label and theme
   const getStatus = (member: Member) => {
@@ -125,33 +120,6 @@ export default function WelcomeBanner({ members, gracePeriodDays }: { members: M
     }
 
     return { label: 'Active', style: 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' }
-  }
-
-  // Handle Check-in Action
-  const handleCheckIn = (member: Member) => {
-    const isAlreadyCheckedIn = checkedInList.some(item => item.id === member.id)
-    if (isAlreadyCheckedIn) {
-      setToast(`${member.full_name} is already checked in.`)
-      setTimeout(() => setToast(null), 3000)
-      setSearchQuery('')
-      return
-    }
-
-    const checkInTime = new Date().toLocaleTimeString('en-IN', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true
-    })
-
-    setCheckedInList(prev => [{ id: member.id, name: member.full_name, time: checkInTime }, ...prev])
-    setToast(`Checked in: ${member.full_name} at ${checkInTime} 🎉`)
-    setTimeout(() => setToast(null), 3000)
-    setSearchQuery('')
-  }
-
-  // Handle Remove Check-in
-  const removeCheckIn = (id: string) => {
-    setCheckedInList(prev => prev.filter(item => item.id !== id))
   }
 
   return (
@@ -230,7 +198,7 @@ export default function WelcomeBanner({ members, gracePeriodDays }: { members: M
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Quick check-in (Name, ID, Mobile)..."
+                placeholder="Search members (Name, ID, Mobile)..."
                 className="w-full bg-white/5 border border-white/10 text-white placeholder-white/30 rounded-lg pl-9 pr-3 py-1.5 text-xs focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all font-medium"
               />
               {searchQuery && (
@@ -254,88 +222,38 @@ export default function WelcomeBanner({ members, gracePeriodDays }: { members: M
                   searchResults.map(member => {
                     const status = getStatus(member)
                     return (
-                      <div key={member.id} className="flex items-center justify-between p-3 hover:bg-white/5 transition-colors">
+                      <Link
+                        key={member.id}
+                        href={`/members/${member.id}`}
+                        onClick={() => setSearchQuery('')}
+                        className="flex items-center justify-between p-3 hover:bg-white/5 transition-colors"
+                      >
                         <div className="min-w-0 flex-1 mr-2">
                           <p className="font-semibold text-xs text-foreground truncate">{member.full_name}</p>
                           <p className="text-[10px] text-muted-foreground">ID: {member.member_id} · {member.mobile}</p>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-shrink-0">
                           <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold uppercase ${status.style}`}>
                             {status.label}
                           </span>
-                          <button
-                            onClick={() => handleCheckIn(member)}
-                            className="bg-primary hover:bg-primary/95 text-black p-1 rounded-md transition-all scale-95 hover:scale-105"
-                            title="Check In"
-                          >
-                            <UserCheck className="w-3.5 h-3.5" />
-                          </button>
+                          <ChevronRight className="w-3.5 h-3.5 text-white/40" />
                         </div>
-                      </div>
+                      </Link>
                     )
                   })
                 )}
               </div>
             )}
 
-            {/* Session Check-in Log */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] uppercase font-bold text-white/50 tracking-wider">
-                  Session Log ({checkedInList.length})
-                </span>
-                {checkedInList.length > 0 && (
-                  <button 
-                    onClick={() => setCheckedInList([])}
-                    className="text-[9px] text-primary hover:underline font-semibold"
-                  >
-                    Clear All
-                  </button>
-                )}
+            {!searchQuery && (
+              <div className="text-[11px] text-white/30 italic flex items-center justify-center py-2 bg-white/2 rounded-lg border border-white/5 border-dashed">
+                Search a member to jump to their profile.
               </div>
-
-              {checkedInList.length === 0 ? (
-                <div className="text-[11px] text-white/30 italic flex items-center justify-center py-2 bg-white/2 rounded-lg border border-white/5 border-dashed">
-                  Search & check in members above.
-                </div>
-              ) : (
-                <div className="max-h-[64px] overflow-y-auto space-y-1.5 pr-1">
-                  {checkedInList.map((item) => (
-                    <div 
-                      key={item.id} 
-                      className="flex items-center justify-between bg-white/5 rounded-lg px-2.5 py-1.5 border border-white/5 animate-scale-in"
-                    >
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <Check className="w-3 h-3 text-primary flex-shrink-0" />
-                        <span className="text-xs text-white font-medium truncate">{item.name}</span>
-                      </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
-                        <span className="text-[9px] text-white/40 font-mono">{item.time}</span>
-                        <button 
-                          onClick={() => removeCheckIn(item.id)}
-                          className="text-white/30 hover:text-white transition-colors"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            )}
           </div>
         </div>
 
       </div>
-
-      {/* Interactive Toast Notifications inside the banner */}
-      {toast && (
-        <div className="absolute bottom-4 left-4 right-4 bg-primary text-black text-xs font-bold py-2 px-3 rounded-lg flex items-center gap-2 z-30 shadow-lg animate-fade-in-up border border-primary/20">
-          <Check className="w-4 h-4 bg-black/10 rounded-full p-0.5" />
-          <span>{toast}</span>
-        </div>
-      )}
-
     </div>
   )
 }
