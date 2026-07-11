@@ -1,6 +1,6 @@
 import { unstable_cache } from 'next/cache'
 import { createAdminClient } from './supabase/admin'
-import { DEFAULT_GRACE_PERIOD_DAYS, getMembershipStatus, pickCurrentMembership } from './utils'
+import { DEFAULT_GRACE_PERIOD_DAYS, getMembershipStatus, pickCurrentMembership, computeHistoryStatus } from './utils'
 import type { Member, DashboardStats, Payment, MembershipPlan, Coach, PtPlan, Membership, BiometricAttendance } from '@/types'
 import type { MemberAdmsInfo } from '@/app/actions/adms'
 import type { MemberPtInfo } from '@/app/actions/pt'
@@ -702,7 +702,7 @@ const _getMemberDetail = async (memberId: string): Promise<MemberDetailData> => 
       expiryDate: row.expiry_date,
       amount: row.amount,
       amountNote: row.amount_note,
-      status: row.status,
+      status: computeHistoryStatus(row, todayStr),
       createdAt: row.created_at,
     }
   })

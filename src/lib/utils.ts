@@ -60,6 +60,23 @@ export function pickCurrentMembership<T extends { start_date: string; expiry_dat
   return memberships.reduce((a, b) => (b.start_date < a.start_date ? b : a))
 }
 
+// Status here is computed against today's date rather than the raw DB
+// column — an early-renewed member has a future-dated row that's stored as
+// 'active' (renewMembership marks it active immediately on insert) even
+// though it hasn't started yet. Showing that as "Active" would contradict
+// the Active Membership card above it, which already picks whichever row
+// actually covers today (see pickCurrentMembership) — so a not-yet-started
+// row reads "Upcoming" here instead.
+export function computeHistoryStatus(
+  row: { start_date: string; expiry_date: string; status: 'active' | 'expired' | 'cancelled' },
+  todayStr: string
+): 'active' | 'upcoming' | 'expired' | 'cancelled' {
+  if (row.status === 'cancelled') return 'cancelled'
+  if (row.start_date > todayStr) return 'upcoming'
+  if (row.expiry_date < todayStr) return 'expired'
+  return 'active'
+}
+
 export function getDaysUntilExpiry(expiryDate: string): number {
   return differenceInDays(new Date(expiryDate), new Date())
 }

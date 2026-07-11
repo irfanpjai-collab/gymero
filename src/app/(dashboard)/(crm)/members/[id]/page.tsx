@@ -470,11 +470,13 @@ export default async function MemberDetailPage({
                           <Badge className={`border text-xs ${
                             h.status === 'active'
                               ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
+                              : h.status === 'upcoming'
+                              ? 'text-blue-400 bg-blue-500/10 border-blue-500/20'
                               : h.status === 'cancelled'
                               ? 'text-muted-foreground bg-slate-500/10 border-slate-500/20'
                               : 'text-red-400 bg-red-500/10 border-red-500/20'
                           }`}>
-                            {h.status === 'active' ? 'Active' : h.status === 'cancelled' ? 'Cancelled' : 'Expired'}
+                            {h.status === 'active' ? 'Active' : h.status === 'upcoming' ? 'Upcoming' : h.status === 'cancelled' ? 'Cancelled' : 'Expired'}
                           </Badge>
                         </td>
                       </tr>

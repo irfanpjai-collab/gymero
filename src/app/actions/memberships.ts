@@ -4,7 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth'
 import { revalidatePath, revalidateTag } from 'next/cache'
 import { syncPaymentsSheet } from '@/lib/sheets-backup'
-import { getExpiryDateFromPlan } from '@/lib/utils'
+import { getExpiryDateFromPlan, computeHistoryStatus } from '@/lib/utils'
 import type { MembershipPlan } from '@/types'
 
 export async function getPlans(): Promise<MembershipPlan[]> {
@@ -343,7 +343,7 @@ export interface MembershipHistoryEntry {
   expiryDate: string
   amount: number
   amountNote: string | null
-  status: 'active' | 'expired' | 'cancelled'
+  status: 'active' | 'upcoming' | 'expired' | 'cancelled'
   createdAt: string
 }
 
@@ -358,6 +358,7 @@ export async function getMembershipHistory(memberId: string): Promise<Membership
 
     if (error) throw error
 
+    const todayStr = new Date().toISOString().slice(0, 10)
     return (data ?? []).map((row) => {
       const plan = Array.isArray(row.plan) ? row.plan[0] : row.plan
       return {
@@ -367,7 +368,7 @@ export async function getMembershipHistory(memberId: string): Promise<Membership
         expiryDate: row.expiry_date,
         amount: row.amount,
         amountNote: row.amount_note,
-        status: row.status,
+        status: computeHistoryStatus(row, todayStr),
         createdAt: row.created_at,
       }
     })
