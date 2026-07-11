@@ -331,3 +331,81 @@ export async function getBiometricPageData(dateStr?: string): Promise<BiometricP
     return empty
   }
 }
+
+export interface RecentCheckIn {
+  memberId: string | null
+  memberNumber: number | null
+  fullName: string
+  timestamp: string
+  punch: number
+  membershipStatus: 'active' | 'expired' | 'none'
+}
+
+// Lean version of getBiometricPageData for the Dashboard's own check-ins
+// widget — just today's punches + membership status, not the full device/
+// command/member-list payload the Biometric page needs. Deliberately not
+// cached: check-ins are inherently "right now" information, and this is
+// cheap enough (today's rows only, capped) to just fetch live each time.
+export async function getRecentCheckIns(limit = 8): Promise<RecentCheckIn[]> {
+  try {
+    const supabase = await createClient()
+    const dayStart = new Date()
+    dayStart.setHours(0, 0, 0, 0)
+    const dayEnd = new Date(dayStart)
+    dayEnd.setDate(dayEnd.getDate() + 1)
+
+    const { data: attRows, error } = await supabase
+      .from('attendance_logs')
+      .select(`
+        device_user_id, punched_at, punch_type,
+        member:members!attendance_logs_member_id_fkey(id, full_name, member_id)
+      `)
+      .gte('punched_at', dayStart.toISOString())
+      .lt('punched_at', dayEnd.toISOString())
+      .order('punched_at', { ascending: false })
+      .limit(limit)
+
+    if (error) throw error
+
+    type Row = {
+      device_user_id: string
+      punched_at: string
+      punch_type: number | null
+      member: { id: string; full_name: string; member_id: number } | null
+    }
+    const rows = (attRows ?? []) as unknown as Row[]
+
+    // Same "latest membership per member" pattern as getBiometricPageData —
+    // status is computed from the member's current membership, not queried
+    // per row.
+    const memberUuids = [...new Set(rows.map(r => r.member?.id).filter(Boolean))] as string[]
+    const { data: memberships } = memberUuids.length
+      ? await supabase.from('memberships').select('member_id, status, expiry_date').in('member_id', memberUuids)
+      : { data: [] }
+
+    const membershipLookup: Record<string, { status: string; expiry_date: string }> = {}
+    for (const m of (memberships ?? []) as { member_id: string; status: string; expiry_date: string }[]) {
+      const cur = membershipLookup[m.member_id]
+      if (!cur || (m.expiry_date ?? '') > (cur.expiry_date ?? '')) {
+        membershipLookup[m.member_id] = { status: m.status, expiry_date: m.expiry_date }
+      }
+    }
+    const today = new Date().toISOString().split('T')[0]
+
+    return rows.map((row) => {
+      const mem = row.member ? membershipLookup[row.member.id] : undefined
+      const active = !!mem && mem.status === 'active' && mem.expiry_date >= today
+      return {
+        memberId: row.member?.id ?? null,
+        memberNumber: row.member?.member_id ?? null,
+        fullName: row.member?.full_name ?? `Member #${row.device_user_id}`,
+        timestamp: row.punched_at,
+        punch: row.punch_type ?? 0,
+        membershipStatus: mem ? (active ? 'active' : 'expired') : 'none',
+      }
+    })
+  } catch (err) {
+    console.error('getRecentCheckIns error:', err)
+    return []
+  }
+}
