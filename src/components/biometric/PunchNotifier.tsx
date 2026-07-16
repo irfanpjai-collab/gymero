@@ -95,8 +95,12 @@ export default function PunchNotifier() {
   if (!current) return null
 
   const isIn = current.punchType === 0 || current.punchType === 4
+  // Explicit IST timeZone — this popup can be shown from a Server-rendered
+  // parent's data but runs client-side, so relying on the browser's local
+  // timezone alone works only if staff happen to be physically in India;
+  // pinning it removes that assumption (same reasoning as formatDateTime).
   const time = new Date(current.timestamp).toLocaleTimeString('en-IN', {
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Kolkata',
   })
 
   const statusStyles =

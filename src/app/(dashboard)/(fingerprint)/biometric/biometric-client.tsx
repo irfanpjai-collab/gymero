@@ -38,14 +38,13 @@ import {
 } from '@/app/actions/adms'
 import { createClient } from '@/lib/supabase/client'
 import { subscribeToAttendanceInserts } from '@/lib/realtime/attendance-bus'
+import { formatDateTime as formatDateTimeIST } from '@/lib/utils'
 import type { BiometricAttendance } from '@/types'
 
 function formatDateTime(iso: string | null) {
   if (!iso) return '—'
   try {
-    const d = new Date(iso)
-    return d.toLocaleDateString('en-GB')
-      + ' ' + d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+    return formatDateTimeIST(iso)
   } catch { return iso }
 }
 

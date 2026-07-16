@@ -9,12 +9,31 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+// This gym is India-only, but formatting code runs in two different places
+// that don't share a timezone: Server Components render on Vercel (UTC), Client
+// Components render in the viewer's browser (normally IST). date-fns' format()
+// has no timezone awareness — it just renders in whatever zone the code happens
+// to execute in — so the same timestamp used to print two different times
+// depending on which kind of component displayed it. Intl.DateTimeFormat with
+// an explicit timeZone sidesteps that entirely: always IST, regardless of
+// where the code runs.
+const IST_TIMEZONE = 'Asia/Kolkata'
+
 export function formatDate(date: string | Date): string {
-  return format(new Date(date), 'dd/MM/yyyy')
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: IST_TIMEZONE, day: '2-digit', month: '2-digit', year: 'numeric',
+  }).format(new Date(date))
 }
 
 export function formatDateTime(date: string | Date): string {
-  return format(new Date(date), 'dd/MM/yyyy, hh:mm a')
+  const d = new Date(date)
+  const datePart = new Intl.DateTimeFormat('en-GB', {
+    timeZone: IST_TIMEZONE, day: '2-digit', month: '2-digit', year: 'numeric',
+  }).format(d)
+  const timePart = new Intl.DateTimeFormat('en-US', {
+    timeZone: IST_TIMEZONE, hour: '2-digit', minute: '2-digit', hour12: true,
+  }).format(d)
+  return `${datePart}, ${timePart}`
 }
 
 export function formatCurrency(amount: number): string {

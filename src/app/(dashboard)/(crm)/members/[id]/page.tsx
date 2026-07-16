@@ -41,7 +41,10 @@ const PUNCH_LABELS: Record<number, string> = {
 
 function formatTime(iso: string) {
   try {
-    return new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+    // Explicit IST timeZone — this is a Server Component, which renders on
+    // Vercel (UTC) rather than the viewer's browser, so leaving timeZone
+    // implicit would print the wrong hour (see formatDateTime in lib/utils).
+    return new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })
   } catch { return iso }
 }
 
