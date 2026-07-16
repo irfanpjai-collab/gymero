@@ -76,6 +76,7 @@ export interface Coach {
   specialization?: string
   is_active: boolean
   created_at: string
+  device_number: number | null
 }
 
 // ── Personal Training (independent of the regular membership/plan system —
