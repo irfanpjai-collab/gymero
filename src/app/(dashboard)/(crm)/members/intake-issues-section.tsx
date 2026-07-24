@@ -2,11 +2,13 @@ import { AlertTriangle, Phone } from 'lucide-react'
 import { getFormIntakeIssues, getAvailableMemberIds } from '@/app/actions/form-intake'
 import { formatDateTime } from '@/lib/utils'
 
-// Rows the last form-intake sync couldn't create/update because of a
-// data-entry problem in the sheet — most commonly someone typing the wrong
-// (or someone else's) Member ID. Shown only when there's something to fix;
-// disappears on its own once the sheet is corrected and re-synced, since
-// runFormIntakeSync fully replaces this list every run.
+// Two kinds of row show up here, both from the last form-intake sync: rows
+// that couldn't create/update because of a data-entry problem in the sheet
+// (most commonly someone typing the wrong Member ID — fix in the sheet and
+// re-sync), and duplicate members detected by matching mobile number (fix
+// directly in the CRM — re-syncing the sheet won't resolve those). Shown
+// only when there's something to look at; disappears on its own once
+// resolved, since runFormIntakeSync fully replaces this list every run.
 export default async function IntakeIssuesSection() {
   const [issues, availableIds] = await Promise.all([
     getFormIntakeIssues(),
@@ -23,10 +25,11 @@ export default async function IntakeIssuesSection() {
         </div>
         <div>
           <h2 className="text-sm font-semibold text-foreground">
-            Error Members — {issues.length} submission{issues.length !== 1 ? 's' : ''} need a Member ID fix
+            Error Members — {issues.length} issue{issues.length !== 1 ? 's' : ''} to review
           </h2>
           <p className="text-muted-foreground text-xs mt-0.5">
-            These rows in the intake sheet couldn&apos;t sync. Fix the Member ID in the sheet, then press Sync from Form again.
+            Sheet rows that couldn&apos;t sync: fix the Member ID in the sheet, then press Sync from Form again.
+            Duplicate members (matching mobile number): resolve directly here in the CRM instead.
             {availableIds.length > 0 && (
               <> Available IDs: <span className="font-mono text-foreground">{availableIds.join(', ')}</span></>
             )}

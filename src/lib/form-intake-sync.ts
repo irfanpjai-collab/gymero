@@ -388,6 +388,38 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
     if (error) console.error('form intake sync: device enroll queue failed —', error.message)
   }
 
+  // Independent of anything the sheet did this run — catches members that
+  // already share a mobile number, regardless of how that happened. The
+  // main one in practice: editing a Member ID cell in the sheet doesn't
+  // rename the existing member, it creates a new row under the new ID (the
+  // sync has no way to tell "this cell changed" from "this is a new
+  // person") — the old ID is left behind as an orphaned duplicate with the
+  // same mobile. Runs every sync (not just when a new member happens to be
+  // created this run) so it keeps surfacing until someone actually deletes/
+  // merges the duplicate — a real family sharing a phone will also show up
+  // here, so this is a flag to check, not proof of a mistake.
+  const { data: allActiveMembers } = await supabase
+    .from('members')
+    .select('member_id, full_name, mobile')
+    .is('deleted_at', null)
+  const byMobile = new Map<string, { member_id: number; full_name: string }[]>()
+  for (const m of (allActiveMembers ?? []) as { member_id: number; full_name: string; mobile: string }[]) {
+    if (!m.mobile) continue
+    const list = byMobile.get(m.mobile) ?? []
+    list.push({ member_id: m.member_id, full_name: m.full_name })
+    byMobile.set(m.mobile, list)
+  }
+  for (const [mobile, members] of byMobile) {
+    if (members.length < 2) continue
+    const label = members.map(m => `#${m.member_id} (${m.full_name})`).join(' and ')
+    issues.push({
+      attemptedMemberId: null,
+      name: members.map(m => m.full_name).join(' / '),
+      mobile,
+      reason: `Mobile ${mobile} is shared by ${label} — likely a duplicate from an edited Member ID (or a real shared family number — check before removing either)`,
+    })
+  }
+
   // Full replace, not an append — this table should only ever reflect the
   // *currently* unresolved rows. Anything fixed in the sheet since the last
   // run simply won't be in `issues` this time and drops out on its own.
