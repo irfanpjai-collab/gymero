@@ -119,20 +119,17 @@ export default function RenewDialog({
       const expiryDateObj = parseISO(expiry)
       const days = differenceInDays(new Date(), expiryDateObj)
       setDaysSince(days)
-      if (days > currentGracePeriodDays) {
-        setNeedsAdmissionFee(true)
-        setAdmissionFee(String(defaultAdmissionFee))
-      } else {
-        setNeedsAdmissionFee(false)
-        setAdmissionFee('0')
-      }
+      const beyondGracePeriod = days > currentGracePeriodDays
+      setNeedsAdmissionFee(beyondGracePeriod)
+      setAdmissionFee(beyondGracePeriod ? String(defaultAdmissionFee) : '0')
 
-      // Default start date to the expiry date itself if expiry is still in the future
-      if (days < 0) {
-        setStartDate(format(expiryDateObj, 'yyyy-MM-dd'))
-      } else {
-        setStartDate(today)
-      }
+      // Default start date to the expiry date itself whenever the member is
+      // still within grace (whether that's a still-active early renewal or a
+      // grace-period one) — continues the same coverage timeline instead of
+      // losing the gap between expiry and whenever staff happen to process
+      // the renewal. Only a truly lapsed member (beyond grace) starts fresh
+      // from today. Staff can still edit this field manually either way.
+      setStartDate(beyondGracePeriod ? today : format(expiryDateObj, 'yyyy-MM-dd'))
     }
   }
 

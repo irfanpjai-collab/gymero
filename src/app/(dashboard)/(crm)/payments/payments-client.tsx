@@ -145,8 +145,12 @@ function RecordPaymentDialog({
       const expiryDateObj = parseISO(expiry)
       const days = differenceInDays(new Date(), expiryDateObj)
       setDaysSince(days)
-      setNeedsAdmissionFee(days > gracePeriodDays)
-      setDate(days < 0 ? format(expiryDateObj, 'yyyy-MM-dd') : today)
+      const beyondGracePeriod = days > gracePeriodDays
+      setNeedsAdmissionFee(beyondGracePeriod)
+      // Default to the expiry date itself whenever still within grace (early
+      // renewal or grace-period renewal alike) — only a truly lapsed member
+      // (beyond grace) starts fresh from today. See RenewDialog for the same fix.
+      setDate(beyondGracePeriod ? today : format(expiryDateObj, 'yyyy-MM-dd'))
     }
   }
 
