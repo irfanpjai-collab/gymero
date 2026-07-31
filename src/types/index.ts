@@ -6,6 +6,7 @@ export interface UserProfile {
   name: string
   email: string
   role: UserRole
+  is_super_admin: boolean
   created_at: string
 }
 

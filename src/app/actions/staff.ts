@@ -1,6 +1,6 @@
 'use server'
 
-import { requireRole } from '@/lib/auth'
+import { requireRole, requireSuperAdmin } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
@@ -89,6 +89,29 @@ export async function deleteStaffUser(userId: string): Promise<{ error?: string 
 
     const admin = createAdminClient()
     const { error } = await admin.auth.admin.deleteUser(userId)
+    if (error) throw error
+
+    revalidatePath('/settings')
+    return {}
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return { error: message }
+  }
+}
+
+// Restricted to super admin, not just admin — see requireSuperAdmin. The DB
+// trigger (prevent_role_self_escalation, supabase/super_admin.sql) enforces
+// this same restriction independently at the RLS layer.
+export async function updateUserRole(userId: string, role: UserRole): Promise<{ error?: string }> {
+  try {
+    const profile = await requireSuperAdmin()
+
+    if (userId === profile.user_id) {
+      return { error: "You can't change your own role" }
+    }
+
+    const admin = createAdminClient()
+    const { error } = await admin.from('user_profiles').update({ role }).eq('user_id', userId)
     if (error) throw error
 
     revalidatePath('/settings')

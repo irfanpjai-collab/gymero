@@ -1,10 +1,10 @@
 'use client'
 
 import { useState, useEffect, useCallback, Fragment } from 'react'
-import { Settings, Users, Save, Building, Loader2, Trash2, KeyRound } from 'lucide-react'
+import { Settings, Users, Save, Building, Loader2, Trash2, KeyRound, ShieldCheck } from 'lucide-react'
 import { toast } from 'sonner'
 import { getPlans, createPlan, updatePlan } from '@/app/actions/memberships'
-import { createStaffUser, deleteStaffUser, resetStaffPassword } from '@/app/actions/staff'
+import { createStaffUser, deleteStaffUser, resetStaffPassword, updateUserRole } from '@/app/actions/staff'
 import { getGracePeriodDays, updateGracePeriodDays } from '@/app/actions/settings'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -53,10 +53,12 @@ export default function SettingsPage() {
   const [tab, setTab] = useState<TabType>('General')
   const [settings, setSettings] = useState<GymSettings>(loadInitialSettings)
   const [plans, setPlans] = useState<MembershipPlan[]>([])
-  const [users, setUsers] = useState<{ id: string; user_id: string; name: string; email: string; role: string }[]>([])
+  const [users, setUsers] = useState<{ id: string; user_id: string; name: string; email: string; role: string; is_super_admin: boolean }[]>([])
   const [currentRole, setCurrentRole] = useState<UserRole | null>(null)
+  const [currentIsSuperAdmin, setCurrentIsSuperAdmin] = useState(false)
   const [currentUserId, setCurrentUserId] = useState<string | null>(null)
   const [deletingUserId, setDeletingUserId] = useState<string | null>(null)
+  const [changingRoleUserId, setChangingRoleUserId] = useState<string | null>(null)
   const [resetPasswordUserId, setResetPasswordUserId] = useState<string | null>(null)
   const [resetPasswordValue, setResetPasswordValue] = useState('')
   const [resettingPassword, setResettingPassword] = useState(false)
@@ -95,10 +97,13 @@ export default function SettingsPage() {
       setCurrentUserId(user.id)
       const { data: profile } = await supabase
         .from('user_profiles')
-        .select('role')
+        .select('role, is_super_admin')
         .eq('user_id', user.id)
         .single()
-      if (profile) setCurrentRole(profile.role as UserRole)
+      if (profile) {
+        setCurrentRole(profile.role as UserRole)
+        setCurrentIsSuperAdmin(profile.is_super_admin)
+      }
     })
 
     return () => clearTimeout(timer)
@@ -114,6 +119,17 @@ export default function SettingsPage() {
       fetchUsers()
     }
     setDeletingUserId(null)
+  }
+
+  async function handleChangeRole(userId: string, role: UserRole) {
+    const result = await updateUserRole(userId, role)
+    if (result.error) {
+      toast.error(result.error)
+    } else {
+      toast.success('Role updated')
+      setChangingRoleUserId(null)
+      fetchUsers()
+    }
   }
 
   async function handleResetPassword(userId: string) {
@@ -351,11 +367,26 @@ export default function SettingsPage() {
                         <td className="px-4 py-3 text-foreground font-medium">{u.name || '—'}</td>
                         <td className="px-4 py-3 text-muted-foreground">{u.email}</td>
                         <td className="px-4 py-3">
-                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full border capitalize ${roleColors[u.role] ?? 'text-[#6b8f6b]'}`}>{u.role}</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className={`text-xs font-medium px-2 py-0.5 rounded-full border capitalize ${roleColors[u.role] ?? 'text-[#6b8f6b]'}`}>{u.role}</span>
+                            {u.is_super_admin && (
+                              <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border text-emerald-400 bg-emerald-500/10 border-emerald-500/20" title="Super Admin">
+                                <ShieldCheck className="w-3 h-3" /> Super
+                              </span>
+                            )}
+                          </div>
                         </td>
                         {currentRole === 'admin' && (
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-3">
+                              {currentIsSuperAdmin && u.user_id !== currentUserId && (
+                                <button
+                                  onClick={() => setChangingRoleUserId(changingRoleUserId === u.user_id ? null : u.user_id)}
+                                  className="inline-flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300"
+                                >
+                                  <ShieldCheck className="w-3.5 h-3.5" /> Change Role
+                                </button>
+                              )}
                               <button
                                 onClick={() => { setResetPasswordUserId(resetPasswordUserId === u.user_id ? null : u.user_id); setResetPasswordValue('') }}
                                 className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300"
@@ -375,6 +406,24 @@ export default function SettingsPage() {
                           </td>
                         )}
                       </tr>
+                      {changingRoleUserId === u.user_id && (
+                        <tr className="border-b border-border last:border-0 bg-muted/20">
+                          <td colSpan={4} className="px-4 py-3">
+                            <div className="flex items-center gap-2 max-w-sm">
+                              <select
+                                defaultValue={u.role}
+                                onChange={e => handleChangeRole(u.user_id, e.target.value as UserRole)}
+                                className="h-8 px-3 bg-background border border-border rounded-md text-sm text-foreground"
+                              >
+                                <option value="admin">Admin</option>
+                                <option value="receptionist">Receptionist</option>
+                                <option value="coach">Coach</option>
+                              </select>
+                              <Button size="sm" variant="outline" onClick={() => setChangingRoleUserId(null)}>Cancel</Button>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
                       {resetPasswordUserId === u.user_id && (
                         <tr className="border-b border-border last:border-0 bg-muted/20">
                           <td colSpan={4} className="px-4 py-3">
