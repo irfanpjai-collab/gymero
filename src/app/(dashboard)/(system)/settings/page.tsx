@@ -376,35 +376,44 @@ export default function SettingsPage() {
                             )}
                           </div>
                         </td>
-                        {currentRole === 'admin' && (
-                          <td className="px-4 py-3">
-                            <div className="flex items-center gap-3">
-                              {currentIsSuperAdmin && u.user_id !== currentUserId && (
-                                <button
-                                  onClick={() => setChangingRoleUserId(changingRoleUserId === u.user_id ? null : u.user_id)}
-                                  className="inline-flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300"
-                                >
-                                  <ShieldCheck className="w-3.5 h-3.5" /> Change Role
-                                </button>
-                              )}
-                              <button
-                                onClick={() => { setResetPasswordUserId(resetPasswordUserId === u.user_id ? null : u.user_id); setResetPasswordValue('') }}
-                                className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300"
-                              >
-                                <KeyRound className="w-3.5 h-3.5" /> Reset Password
-                              </button>
-                              {u.user_id !== currentUserId && (
-                                <button
-                                  disabled={deletingUserId === u.user_id}
-                                  onClick={() => handleDeleteUser(u.user_id, u.name)}
-                                  className="inline-flex items-center gap-1 text-xs text-red-400 hover:text-red-300 disabled:opacity-50"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" /> Delete
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        )}
+                        {currentRole === 'admin' && (() => {
+                          // A regular admin can't touch a super admin's account at
+                          // all (delete, reset password) — only another super admin
+                          // can. Change Role is already super-admin-only regardless
+                          // of target. Mirrors assertCanActOnTarget in staff.ts.
+                          const canActOnTarget = currentIsSuperAdmin || !u.is_super_admin
+                          return (
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-3">
+                                {currentIsSuperAdmin && u.user_id !== currentUserId && (
+                                  <button
+                                    onClick={() => setChangingRoleUserId(changingRoleUserId === u.user_id ? null : u.user_id)}
+                                    className="inline-flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300"
+                                  >
+                                    <ShieldCheck className="w-3.5 h-3.5" /> Change Role
+                                  </button>
+                                )}
+                                {canActOnTarget && (
+                                  <button
+                                    onClick={() => { setResetPasswordUserId(resetPasswordUserId === u.user_id ? null : u.user_id); setResetPasswordValue('') }}
+                                    className="inline-flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300"
+                                  >
+                                    <KeyRound className="w-3.5 h-3.5" /> Reset Password
+                                  </button>
+                                )}
+                                {u.user_id !== currentUserId && canActOnTarget && (
+                                  <button
+                                    disabled={deletingUserId === u.user_id}
+                                    onClick={() => handleDeleteUser(u.user_id, u.name)}
+                                    className="inline-flex items-center gap-1 text-xs text-red-400 hover:text-red-300 disabled:opacity-50"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" /> Delete
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          )
+                        })()}
                       </tr>
                       {changingRoleUserId === u.user_id && (
                         <tr className="border-b border-border last:border-0 bg-muted/20">

@@ -77,6 +77,26 @@ export async function createStaffUser(data: {
   }
 }
 
+// A regular admin must never be able to delete, or take over via a password
+// reset, a super admin's account — only another super admin can. Every write
+// in this file goes through the service-role client (the Auth Admin API
+// calls below bypass RLS entirely by design, and even updateUserRole's table
+// update uses the admin client) — so unlike most of this app, there's no RLS
+// backstop here. This check is the actual enforcement, not a defense-in-depth
+// layer on top of one.
+async function assertCanActOnTarget(callerIsSuperAdmin: boolean, targetUserId: string): Promise<void> {
+  if (callerIsSuperAdmin) return
+  const supabase = await createClient()
+  const { data: target } = await supabase
+    .from('user_profiles')
+    .select('is_super_admin')
+    .eq('user_id', targetUserId)
+    .maybeSingle()
+  if (target?.is_super_admin) {
+    throw new Error('Only a super admin can do this to another super admin')
+  }
+}
+
 // Deletes the Auth login; user_profiles row cascades via its
 // ON DELETE CASCADE foreign key (see schema.sql).
 export async function deleteStaffUser(userId: string): Promise<{ error?: string }> {
@@ -86,6 +106,7 @@ export async function deleteStaffUser(userId: string): Promise<{ error?: string 
     if (userId === profile.user_id) {
       return { error: "You can't delete your own account" }
     }
+    await assertCanActOnTarget(profile.is_super_admin, userId)
 
     const admin = createAdminClient()
     const { error } = await admin.auth.admin.deleteUser(userId)
@@ -99,9 +120,10 @@ export async function deleteStaffUser(userId: string): Promise<{ error?: string 
   }
 }
 
-// Restricted to super admin, not just admin — see requireSuperAdmin. The DB
-// trigger (prevent_role_self_escalation, supabase/super_admin.sql) enforces
-// this same restriction independently at the RLS layer.
+// Restricted to super admin, not just admin — see requireSuperAdmin. Unlike
+// deleteStaffUser/resetStaffPassword, this one needs no separate target
+// check: requireSuperAdmin already means only a super admin ever reaches
+// this point, for any target.
 export async function updateUserRole(userId: string, role: UserRole): Promise<{ error?: string }> {
   try {
     const profile = await requireSuperAdmin()
@@ -127,11 +149,12 @@ export async function resetStaffPassword(
   newPassword: string,
 ): Promise<{ error?: string }> {
   try {
-    await requireRole(['admin'])
+    const profile = await requireRole(['admin'])
 
     if (newPassword.length < 6) {
       return { error: 'Password must be at least 6 characters' }
     }
+    await assertCanActOnTarget(profile.is_super_admin, userId)
 
     const admin = createAdminClient()
     const { error } = await admin.auth.admin.updateUserById(userId, { password: newPassword })
