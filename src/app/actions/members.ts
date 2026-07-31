@@ -21,7 +21,7 @@ async function pushNewMembersToDevice(memberIds: string[], requestedBy?: string)
     const supabase = await createClient()
     const { data: members } = await supabase
       .from('members')
-      .select('member_id, full_name')
+      .select('id, member_id, full_name')
       .in('id', memberIds)
 
     if (!members || members.length === 0) return
@@ -32,6 +32,17 @@ async function pushNewMembersToDevice(memberIds: string[], requestedBy?: string)
         member_id: m.member_id,
         full_name: m.full_name,
         requested_by: requestedBy ?? null,
+      }))
+    )
+
+    await logAuditBatch(
+      (members as { id: string; member_id: number; full_name: string }[]).map((m) => ({
+        actor: { user_id: requestedBy ?? null, name: null, role: null },
+        action: 'update' as const,
+        entityType: 'fingerprint_enrollment',
+        entityId: m.id,
+        entityLabel: m.full_name,
+        details: { member_id: m.member_id },
       }))
     )
   } catch (err) {
@@ -50,6 +61,7 @@ async function removeMemberFromDevice(memberId: number, requestedBy?: string): P
       member_id: memberId,
       requested_by: requestedBy ?? null,
     })
+    await logAudit({ user_id: requestedBy ?? null, name: null, role: null }, 'delete', 'fingerprint_enrollment', String(memberId), null, { member_id: memberId })
   } catch (err) {
     console.error('Auto-remove from device failed:', err)
   }
@@ -434,11 +446,18 @@ export async function importMembers(
           // simultaneously 'active' rows for one member, which would confuse
           // WhatsApp due-date messaging and any status count keyed on it.
           if (!insertedMember) {
-            await supabase
+            const { data: expiredRows } = await supabase
               .from('memberships')
               .update({ status: 'expired' })
               .eq('member_id', memberId)
               .eq('status', 'active')
+              .select('id')
+            for (const r of (expiredRows ?? []) as { id: string }[]) {
+              auditRows.push({
+                actor, action: 'update', entityType: 'membership', entityId: r.id, entityLabel: row.full_name,
+                details: { status: 'expired', reason: 'superseded_by_bulk_import', source: 'bulk_import' },
+              })
+            }
           }
 
           const membershipPayload: Record<string, unknown> = {

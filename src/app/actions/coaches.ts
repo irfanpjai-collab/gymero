@@ -22,6 +22,10 @@ async function pushCoachToDevice(deviceNumber: number | null, name: string, requ
       full_name: name,
       requested_by: requestedBy ?? null,
     })
+    await logAudit(
+      { user_id: requestedBy ?? null, name: null, role: null },
+      'update', 'fingerprint_enrollment', String(deviceNumber), name, { device_number: deviceNumber, coach: true }
+    )
   } catch (err) {
     console.error('Auto-push coach to device failed:', err)
   }

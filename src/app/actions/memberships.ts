@@ -143,7 +143,7 @@ export async function renewMembership(
     // Find the latest active membership so a renewal can't shrink remaining paid time.
     const { data: currentActive } = await supabase
       .from('memberships')
-      .select('expiry_date')
+      .select('id, expiry_date')
       .eq('member_id', memberId)
       .eq('status', 'active')
       .order('expiry_date', { ascending: false })
@@ -174,6 +174,12 @@ export async function renewMembership(
       .eq('status', 'active')
 
     if (expireError) throw expireError
+
+    if (currentActive) {
+      await logAudit(actorFromProfile(profile), 'update', 'membership', (currentActive as { id: string }).id, null, {
+        status: 'expired', reason: 'superseded_by_renewal',
+      })
+    }
 
     // Fetch plan to calculate expiry_date and check the amount against its fee
     const { data: plan, error: planError } = await supabase
