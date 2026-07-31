@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth'
 import { revalidatePath } from 'next/cache'
+import { logAudit, actorFromProfile } from '@/lib/audit-log'
 
 export interface DueMember {
   id: string
@@ -153,16 +154,21 @@ export async function logWhatsAppMessage(
   type: string
 ): Promise<void> {
   try {
-    await requireRole(['admin', 'receptionist'])
+    const profile = await requireRole(['admin', 'receptionist'])
     const supabase = await createClient()
 
-    await supabase.from('whatsapp_logs').insert({
+    const { data: inserted } = await supabase.from('whatsapp_logs').insert({
       member_id: memberId,
       phone,
       message,
       message_type: type,
       sent_at: new Date().toISOString(),
       status: 'sent',
+    }).select('id').single()
+
+    const { data: memberForLog } = await supabase.from('members').select('full_name').eq('id', memberId).maybeSingle()
+    await logAudit(actorFromProfile(profile), 'create', 'whatsapp_message', (inserted as { id: string } | null)?.id ?? null, memberForLog?.full_name ?? null, {
+      message_type: type, phone,
     })
 
     revalidatePath('/whatsapp')

@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { logAudit } from '@/lib/audit-log'
+
+const DEVICE_ACTOR = { user_id: null, name: 'Biometric Device (OPERLOG)', role: 'device' }
 
 // ADMS speaks plain text, not JSON — every response here must be text/plain,
 // and the exact formatting matters to the device's firmware.
@@ -121,16 +124,36 @@ export async function POST(req: NextRequest) {
       const fid = fidField ? parseInt(fidField.slice('FID='.length), 10) : NaN
       if (!pin || Number.isNaN(fid)) continue
 
+      const isValid = validField?.slice('Valid='.length) === '1'
+
+      // Only log an actual change — the device can resend the same OPERLOG
+      // history on reconnect, and re-logging an unchanged record every time
+      // would flood the audit log with duplicates of the same physical
+      // enrollment event.
+      const { data: existing } = await supabase
+        .from('adms_fingerprints')
+        .select('valid')
+        .eq('device_user_id', pin)
+        .eq('fid', fid)
+        .maybeSingle()
+
       const { error: fpErr } = await supabase.from('adms_fingerprints').upsert(
         {
           device_user_id: pin,
           fid,
-          valid: validField?.slice('Valid='.length) === '1',
+          valid: isValid,
           enrolled_at: new Date().toISOString(),
         },
         { onConflict: 'device_user_id,fid' }
       )
-      if (fpErr) console.error('adms cdata: fingerprint upsert failed —', fpErr.message)
+      if (fpErr) {
+        console.error('adms cdata: fingerprint upsert failed —', fpErr.message)
+      } else if (!existing || existing.valid !== isValid) {
+        const { data: member } = await supabase.from('members').select('full_name').eq('member_id', Number(pin)).maybeSingle()
+        await logAudit(DEVICE_ACTOR, existing ? 'update' : 'create', 'fingerprint_enrollment', pin, member?.full_name ?? `PIN ${pin}`, {
+          fid, valid: isValid,
+        })
+      }
     }
   }
 

@@ -242,7 +242,9 @@ export async function assignPtMembership(data: {
 
     if (error) throw error
 
-    const { error: paymentError } = await supabase.from('payments').insert({
+    const { data: memberForLog } = await supabase.from('members').select('full_name').eq('id', data.member_id).maybeSingle()
+
+    const { data: insertedPayment, error: paymentError } = await supabase.from('payments').insert({
       member_id: data.member_id,
       pt_membership_id: (inserted as { id: string }).id,
       amount: data.amount,
@@ -251,17 +253,26 @@ export async function assignPtMembership(data: {
       payment_date: data.start_date,
       notes: 'Auto-recorded on PT package sale',
       created_by: profile.user_id,
-    })
+    }).select('id').single()
     if (paymentError) throw new Error(`PT package created but payment failed to record: ${paymentError.message}`)
+    await logAudit(actorFromProfile(profile), 'create', 'payment', (insertedPayment as { id: string } | null)?.id ?? null, memberForLog?.full_name ?? null, {
+      amount: data.amount, payment_type: 'personal_training',
+    })
 
     // Selling a PT package implies a coaching relationship — keep the
     // general coach_members link in sync so this member also shows under
     // the coach's regular "View Members" list, not just the PT client list.
-    await supabase
+    const { data: coachLink } = await supabase
       .from('coach_members')
       .upsert({ coach_id: data.coach_id, member_id: data.member_id }, { onConflict: 'coach_id,member_id', ignoreDuplicates: true })
+      .select('id')
+      .maybeSingle()
+    if (coachLink) {
+      await logAudit(actorFromProfile(profile), 'create', 'coach_assignment', `${data.coach_id}:${data.member_id}`, memberForLog?.full_name ?? null, {
+        coach_id: data.coach_id, member_id: data.member_id, via: 'pt_sale',
+      })
+    }
 
-    const { data: memberForLog } = await supabase.from('members').select('full_name').eq('id', data.member_id).maybeSingle()
     await logAudit(actorFromProfile(profile), 'create', 'pt_membership', (inserted as { id: string }).id, memberForLog?.full_name ?? null, {
       coach_id: data.coach_id, plan_id: data.plan_id, amount: data.amount,
     })

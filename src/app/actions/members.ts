@@ -203,14 +203,19 @@ export async function createMember(
     const paymentMethod = data.get('payment_method') as string | null
     const paidNow = data.get('paid_now') === 'true'
     if (isToday && paidNow && inserted && admissionFee && parseFloat(admissionFee) > 0 && paymentMethod) {
-      await supabase.from('payments').insert({
+      const { data: insertedPayment } = await supabase.from('payments').insert({
         member_id: (inserted as { id: string }).id,
         amount: parseFloat(admissionFee),
         payment_method: paymentMethod,
         payment_type: 'admission',
         payment_date: joinDate,
         notes: 'Auto-recorded admission fee on member creation',
-      })
+      }).select('id').single()
+      if (insertedPayment) {
+        await logAudit(actorFromProfile(profile), 'create', 'payment', (insertedPayment as { id: string }).id, payload.full_name as string, {
+          amount: parseFloat(admissionFee), payment_type: 'admission',
+        })
+      }
     }
 
     await pushNewMembersToDevice([(inserted as { id: string }).id], profile.user_id)

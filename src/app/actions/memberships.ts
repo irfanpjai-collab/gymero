@@ -89,8 +89,10 @@ export async function createMembership(data: {
 
     if (error) throw error
 
+    const { data: memberForLog } = await supabase.from('members').select('full_name').eq('id', data.member_id).maybeSingle()
+
     if (recordPayment) {
-      const { error: paymentError } = await supabase.from('payments').insert({
+      const { data: insertedPayment, error: paymentError } = await supabase.from('payments').insert({
         member_id: data.member_id,
         membership_id: (inserted as { id: string }).id,
         amount: data.amount,
@@ -99,13 +101,15 @@ export async function createMembership(data: {
         payment_date: data.start_date,
         notes: 'Auto-recorded on membership creation',
         created_by: profile.user_id,
-      })
+      }).select('id').single()
       if (paymentError) throw new Error(`Membership created but payment failed to record: ${paymentError.message}`)
+      await logAudit(actorFromProfile(profile), 'create', 'payment', (insertedPayment as { id: string } | null)?.id ?? null, memberForLog?.full_name ?? null, {
+        amount: data.amount, payment_type: 'membership',
+      })
     }
 
     syncPaymentsSheet().catch((err) => console.error('[sheets] payments sync failed:', err))
 
-    const { data: memberForLog } = await supabase.from('members').select('full_name').eq('id', data.member_id).maybeSingle()
     await logAudit(actorFromProfile(profile), 'create', 'membership', (inserted as { id: string }).id, memberForLog?.full_name ?? null, {
       member_id: data.member_id, plan_id: data.plan_id, amount: data.amount, start_date: data.start_date, expiry_date: expiryDateStr,
     })
@@ -218,6 +222,8 @@ export async function renewMembership(
 
     if (insertError) throw insertError
 
+    const { data: memberForLog } = await supabase.from('members').select('full_name').eq('id', memberId).maybeSingle()
+
     // If admission fee is provided (lapsed member rejoining), update the member record
     if (data.admission_fee && data.admission_fee > 0) {
       const { error: feeError } = await supabase
@@ -225,10 +231,13 @@ export async function renewMembership(
         .update({ admission_fee: data.admission_fee })
         .eq('id', memberId)
       if (feeError) throw feeError
+      await logAudit(actorFromProfile(profile), 'update', 'member', memberId, memberForLog?.full_name ?? null, {
+        admission_fee: data.admission_fee,
+      })
     }
 
     // 1. Membership payment
-    const { error: paymentError } = await supabase.from('payments').insert({
+    const { data: insertedPayment, error: paymentError } = await supabase.from('payments').insert({
       member_id: memberId,
       membership_id: (insertedMembership as { id: string }).id,
       amount: data.amount,
@@ -237,12 +246,15 @@ export async function renewMembership(
       payment_date: effectiveStartStr,
       notes: 'Auto-recorded on membership renewal',
       created_by: profile.user_id,
-    })
+    }).select('id').single()
     if (paymentError) throw new Error(`Membership renewed but payment failed to record: ${paymentError.message}`)
+    await logAudit(actorFromProfile(profile), 'create', 'payment', (insertedPayment as { id: string } | null)?.id ?? null, memberForLog?.full_name ?? null, {
+      amount: data.amount, payment_type: 'membership',
+    })
 
     // 2. Admission fee payment (if applicable)
     if (data.admission_fee && data.admission_fee > 0) {
-      const { error: admissionPaymentError } = await supabase.from('payments').insert({
+      const { data: insertedAdmissionPayment, error: admissionPaymentError } = await supabase.from('payments').insert({
         member_id: memberId,
         amount: data.admission_fee,
         payment_method: data.payment_method,
@@ -250,15 +262,17 @@ export async function renewMembership(
         payment_date: effectiveStartStr,
         notes: 'Auto-recorded admission fee on membership renewal',
         created_by: profile.user_id,
-      })
+      }).select('id').single()
       if (admissionPaymentError) {
         throw new Error(`Membership renewed but admission fee payment failed to record: ${admissionPaymentError.message}`)
       }
+      await logAudit(actorFromProfile(profile), 'create', 'payment', (insertedAdmissionPayment as { id: string } | null)?.id ?? null, memberForLog?.full_name ?? null, {
+        amount: data.admission_fee, payment_type: 'admission',
+      })
     }
 
     syncPaymentsSheet().catch((err) => console.error('[sheets] payments sync failed:', err))
 
-    const { data: memberForLog } = await supabase.from('members').select('full_name').eq('id', memberId).maybeSingle()
     await logAudit(actorFromProfile(profile), 'create', 'membership', (insertedMembership as { id: string }).id, memberForLog?.full_name ?? null, {
       renewal: true, plan_id: data.plan_id, amount: data.amount, start_date: effectiveStartStr, expiry_date: expiryDateStr,
       admission_fee: data.admission_fee || undefined,
