@@ -80,6 +80,13 @@ export default function NewMemberPage() {
   const [startDate, setStartDate] = useState(today)
   const [amount, setAmount] = useState('')
   const [amountNote, setAmountNote] = useState('')
+  // Independent from the admission fee's paidNow above — a member can pay
+  // the admission fee today but still owe the membership fee, or vice versa.
+  // "Paid now" applies only while the membership's own start date is today;
+  // a backdated start always skips the payment record, same reasoning as
+  // isBackdated for the admission fee.
+  const [membershipPaidNow, setMembershipPaidNow] = useState(true)
+  const isMembershipBackdated = startDate !== today
 
   // Personal Training toggle
   const [addPt, setAddPt] = useState(false)
@@ -167,8 +174,8 @@ export default function NewMemberPage() {
           amount: parseFloat(amount) || 0,
           amount_note: amountNote.trim() || undefined,
           payment_method: paymentMethod,
-          skip_payment: isBackdated,
-          paid_now: isBackdated ? undefined : paidNow,
+          skip_payment: isMembershipBackdated,
+          paid_now: isMembershipBackdated ? undefined : membershipPaidNow,
         })
 
         if (membershipResult.error) {
@@ -372,8 +379,8 @@ export default function NewMemberPage() {
                 </p>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   {paidNow
-                    ? 'Admission fee and membership payment will be recorded'
-                    : 'Membership created but no payment recorded — visible as pending in Accounts'}
+                    ? 'Admission fee payment will be recorded'
+                    : 'No admission fee payment recorded — visible as pending in Accounts'}
                 </p>
               </div>
             </div>
@@ -521,6 +528,50 @@ export default function NewMemberPage() {
                           </>
                         )
                       })()}
+                    </div>
+                  )}
+
+                  {/* Independent of the admission fee's paid-now toggle above —
+                      this one only affects the membership payment record. */}
+                  {isMembershipBackdated ? (
+                    <div className="flex items-start gap-2.5 px-4 py-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs">
+                      <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                      <span>
+                        <span className="font-semibold">Historical entry</span> — start date is in the past.
+                        Membership created for status tracking only, no payment record added.
+                      </span>
+                    </div>
+                  ) : (
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => setMembershipPaidNow((v) => !v)}
+                      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setMembershipPaidNow((v) => !v)}
+                      className={`flex items-center gap-3 px-4 py-3 rounded-xl border cursor-pointer select-none transition-colors ${
+                        membershipPaidNow
+                          ? 'bg-emerald-500/10 border-emerald-500/30'
+                          : 'bg-amber-500/10 border-amber-500/30'
+                      }`}
+                    >
+                      <div className={`w-5 h-5 rounded flex items-center justify-center border-2 shrink-0 transition-colors ${
+                        membershipPaidNow ? 'bg-emerald-500 border-emerald-500' : 'border-amber-500/60 bg-transparent'
+                      }`}>
+                        {membershipPaidNow && (
+                          <svg viewBox="0 0 12 12" fill="none" className="w-3 h-3">
+                            <path d="M2 6l3 3 5-5" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        )}
+                      </div>
+                      <div>
+                        <p className={`text-sm font-semibold ${membershipPaidNow ? 'text-emerald-400' : 'text-amber-400'}`}>
+                          {membershipPaidNow ? 'Paid now' : 'Payment pending'}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {membershipPaidNow
+                            ? 'Membership payment will be recorded'
+                            : 'Membership created but no payment recorded — visible as pending in Accounts'}
+                        </p>
+                      </div>
                     </div>
                   )}
                 </>
