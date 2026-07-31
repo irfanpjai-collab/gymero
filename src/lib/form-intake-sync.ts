@@ -2,6 +2,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { getSheetValues } from '@/lib/google-sheets'
 import { revalidateTag, revalidatePath } from 'next/cache'
 import { getExpiryDateFromPlan } from '@/lib/utils'
+import { logAuditBatch, SYSTEM_ACTOR } from '@/lib/audit-log'
+import type { AuditLogRow } from '@/lib/audit-log'
 
 // Pulls new/edited rows from the gym's Google Form intake sheet (a *separate*
 // spreadsheet from the one-way backup in sheets-backup.ts — this direction is
@@ -76,6 +78,7 @@ interface IntakeIssue {
 export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
   const result: FormIntakeSyncResult = { ok: false, created: 0, updated: 0, skipped: 0, warnings: [], errors: [] }
   const issues: IntakeIssue[] = []
+  const auditRows: AuditLogRow[] = []
 
   const spreadsheetId = process.env.GYM_INTAKE_FORM_SPREADSHEET_ID
   if (!spreadsheetId) {
@@ -195,6 +198,7 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
   async function createMembershipIfNone(
     memberUuid: string,
     memberIdForLog: number,
+    memberName: string,
     startDate: string | null,
     plan: { id: string; duration_months: number; fee: number } | undefined
   ): Promise<void> {
@@ -217,7 +221,14 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
       status: 'active',
       payment_pending: false, // treated as already paid in cash — no `payments` row, so this stays out of Accounts
     })
-    if (error) result.errors.push(`Member ID ${memberIdForLog}: membership creation failed — ${error.message}`)
+    if (error) {
+      result.errors.push(`Member ID ${memberIdForLog}: membership creation failed — ${error.message}`)
+    } else {
+      auditRows.push({
+        actor: SYSTEM_ACTOR, action: 'create', entityType: 'membership', entityId: memberUuid, entityLabel: memberName,
+        details: { member_id: memberIdForLog, expiry_date: expiryDateStr, source: 'form_intake_sync' },
+      })
+    }
   }
 
   // Corrects a membership's start date and/or plan/expiry to match a
@@ -238,6 +249,7 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
   async function reconcileMembership(
     membership: MembershipRow,
     memberIdForLog: number,
+    memberName: string,
     newStartDate: string | null,
     plan: { id: string; duration_months: number; fee: number } | undefined
   ): Promise<void> {
@@ -260,7 +272,14 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
         expiry_date: expiryDateStr,
       })
       .eq('id', membership.id)
-    if (error) result.errors.push(`Member ID ${memberIdForLog}: membership update failed — ${error.message}`)
+    if (error) {
+      result.errors.push(`Member ID ${memberIdForLog}: membership update failed — ${error.message}`)
+    } else {
+      auditRows.push({
+        actor: SYSTEM_ACTOR, action: 'update', entityType: 'membership', entityId: membership.id, entityLabel: memberName,
+        details: { member_id: memberIdForLog, plan_changed: planChanged, start_changed: startChanged, source: 'form_intake_sync' },
+      })
+    }
   }
 
   // Pushed to the device at the end — a targeted insert for just the members
@@ -335,6 +354,10 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
         // The device stores name against PIN — a name correction here would
         // otherwise silently drift from what's shown at the machine.
         if (nameChanged) toPushToDevice.push({ member_id: memberId, full_name: row.name })
+        auditRows.push({
+          actor: SYSTEM_ACTOR, action: 'update', entityType: 'member', entityId: existing.id, entityLabel: row.name,
+          details: { member_id: memberId, changed_fields: Object.keys(payload), source: 'form_intake_sync' },
+        })
       }
 
       const memberships = membershipsByMember.get(existing.id) ?? []
@@ -343,12 +366,12 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
         // member still has no membership at all, and the sheet now
         // specifies a valid one, create it now instead of silently doing
         // nothing.
-        await createMembershipIfNone(existing.id, memberId, row.joinDate ?? existing.join_date, plan)
+        await createMembershipIfNone(existing.id, memberId, row.name, row.joinDate ?? existing.join_date, plan)
       } else if (memberships.length === 1) {
         // Covers a corrected Join Date and/or MEMBERSHIP MONTH for a member
         // who hasn't renewed or been manually corrected since — see
         // reconcileMembership for the safety reasoning.
-        await reconcileMembership(memberships[0], memberId, row.joinDate, plan)
+        await reconcileMembership(memberships[0], memberId, row.name, row.joinDate, plan)
       }
       return
     }
@@ -367,8 +390,12 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
     }
     result.created++
     toPushToDevice.push({ member_id: memberId, full_name: row.name })
+    auditRows.push({
+      actor: SYSTEM_ACTOR, action: 'create', entityType: 'member', entityId: (inserted as { id: string }).id, entityLabel: row.name,
+      details: { member_id: memberId, mobile: row.mobile, source: 'form_intake_sync' },
+    })
 
-    await createMembershipIfNone((inserted as { id: string }).id, memberId, row.joinDate, plan)
+    await createMembershipIfNone((inserted as { id: string }).id, memberId, row.name, row.joinDate, plan)
   }
 
   const CONCURRENCY = 10
@@ -387,6 +414,8 @@ export async function runFormIntakeSync(): Promise<FormIntakeSyncResult> {
     )
     if (error) console.error('form intake sync: device enroll queue failed —', error.message)
   }
+
+  await logAuditBatch(auditRows)
 
   // Independent of anything the sheet did this run — catches members that
   // already share a mobile number, regardless of how that happened. The

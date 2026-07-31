@@ -4,6 +4,7 @@ import { requireRole, requireSuperAdmin } from '@/lib/auth'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { revalidatePath } from 'next/cache'
+import { logAudit, actorFromProfile } from '@/lib/audit-log'
 import type { UserRole } from '@/types'
 
 export interface StaffOption {
@@ -40,7 +41,7 @@ export async function createStaffUser(data: {
   role: UserRole
 }): Promise<{ error?: string }> {
   try {
-    await requireRole(['admin'])
+    const profile = await requireRole(['admin'])
 
     if (data.password.length < 6) {
       return { error: 'Password must be at least 6 characters' }
@@ -68,6 +69,11 @@ export async function createStaffUser(data: {
       await admin.auth.admin.deleteUser(created.user.id)
       throw new Error(profileError.message)
     }
+
+    // Password is deliberately never included — everything else here is fine to see.
+    await logAudit(actorFromProfile(profile), 'create', 'staff_user', created.user.id, data.name, {
+      email: data.email, role: data.role,
+    })
 
     revalidatePath('/settings')
     return {}
@@ -109,8 +115,11 @@ export async function deleteStaffUser(userId: string): Promise<{ error?: string 
     await assertCanActOnTarget(profile.is_super_admin, userId)
 
     const admin = createAdminClient()
+    const { data: target } = await admin.from('user_profiles').select('name').eq('user_id', userId).maybeSingle()
     const { error } = await admin.auth.admin.deleteUser(userId)
     if (error) throw error
+
+    await logAudit(actorFromProfile(profile), 'delete', 'staff_user', userId, target?.name ?? null)
 
     revalidatePath('/settings')
     return {}
@@ -133,8 +142,13 @@ export async function updateUserRole(userId: string, role: UserRole): Promise<{ 
     }
 
     const admin = createAdminClient()
+    const { data: target } = await admin.from('user_profiles').select('name, role').eq('user_id', userId).maybeSingle()
     const { error } = await admin.from('user_profiles').update({ role }).eq('user_id', userId)
     if (error) throw error
+
+    await logAudit(actorFromProfile(profile), 'update', 'staff_user', userId, target?.name ?? null, {
+      old_role: target?.role, new_role: role,
+    })
 
     revalidatePath('/settings')
     return {}
@@ -157,8 +171,12 @@ export async function resetStaffPassword(
     await assertCanActOnTarget(profile.is_super_admin, userId)
 
     const admin = createAdminClient()
+    const { data: target } = await admin.from('user_profiles').select('name').eq('user_id', userId).maybeSingle()
     const { error } = await admin.auth.admin.updateUserById(userId, { password: newPassword })
     if (error) throw error
+
+    // The new password itself is never logged — only that a reset happened and who did it.
+    await logAudit(actorFromProfile(profile), 'update', 'staff_user', userId, target?.name ?? null, { action: 'password_reset' })
 
     return {}
   } catch (err) {

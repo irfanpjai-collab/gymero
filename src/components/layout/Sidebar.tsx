@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
@@ -19,6 +20,7 @@ import {
   Settings,
   LogOut,
   Fingerprint,
+  ClipboardList,
 } from 'lucide-react'
 
 type NavItem = {
@@ -66,6 +68,30 @@ const navGroups: NavGroup[] = [
 export default function Sidebar() {
   const pathname = usePathname()
   const router   = useRouter()
+  // Logs is inserted into the System group only for a super admin — fetched
+  // client-side since Sidebar has no server-rendered profile data to draw on.
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false)
+
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) return
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('is_super_admin')
+        .eq('user_id', user.id)
+        .single()
+      if (profile?.is_super_admin) setIsSuperAdmin(true)
+    })
+  }, [])
+
+  const groups: NavGroup[] = isSuperAdmin
+    ? navGroups.map((g) =>
+        g.section === 'System'
+          ? { ...g, items: [...g.items, { href: '/logs', icon: ClipboardList, label: 'Logs' }] }
+          : g
+      )
+    : navGroups
 
   const handleLogout = async () => {
     const supabase = createClient()
@@ -90,7 +116,7 @@ export default function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 px-2.5 py-3 overflow-y-auto space-y-4">
-        {navGroups.map((group) => (
+        {groups.map((group) => (
           <div key={group.section}>
             {/* Section label */}
             <p className="px-2 pb-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/40 select-none">

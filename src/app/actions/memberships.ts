@@ -5,6 +5,7 @@ import { requireRole } from '@/lib/auth'
 import { revalidatePath, revalidateTag } from 'next/cache'
 import { syncPaymentsSheet } from '@/lib/sheets-backup'
 import { getExpiryDateFromPlan, computeHistoryStatus } from '@/lib/utils'
+import { logAudit, actorFromProfile } from '@/lib/audit-log'
 import type { MembershipPlan } from '@/types'
 
 export async function getPlans(): Promise<MembershipPlan[]> {
@@ -103,6 +104,12 @@ export async function createMembership(data: {
     }
 
     syncPaymentsSheet().catch((err) => console.error('[sheets] payments sync failed:', err))
+
+    const { data: memberForLog } = await supabase.from('members').select('full_name').eq('id', data.member_id).maybeSingle()
+    await logAudit(actorFromProfile(profile), 'create', 'membership', (inserted as { id: string }).id, memberForLog?.full_name ?? null, {
+      member_id: data.member_id, plan_id: data.plan_id, amount: data.amount, start_date: data.start_date, expiry_date: expiryDateStr,
+    })
+
     revalidateTag('payments', {})
     revalidateTag('members', {})
     revalidatePath('/members')
@@ -244,6 +251,13 @@ export async function renewMembership(
     }
 
     syncPaymentsSheet().catch((err) => console.error('[sheets] payments sync failed:', err))
+
+    const { data: memberForLog } = await supabase.from('members').select('full_name').eq('id', memberId).maybeSingle()
+    await logAudit(actorFromProfile(profile), 'create', 'membership', (insertedMembership as { id: string }).id, memberForLog?.full_name ?? null, {
+      renewal: true, plan_id: data.plan_id, amount: data.amount, start_date: effectiveStartStr, expiry_date: expiryDateStr,
+      admission_fee: data.admission_fee || undefined,
+    })
+
     revalidateTag('payments', {})
     revalidateTag('members', {})
     revalidatePath('/members')
@@ -266,7 +280,7 @@ export async function updatePlan(
   data: Partial<MembershipPlan>
 ): Promise<{ error?: string }> {
   try {
-    await requireRole(['admin'])
+    const profile = await requireRole(['admin'])
     const supabase = await createClient()
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -278,6 +292,8 @@ export async function updatePlan(
       .eq('id', id)
 
     if (error) throw error
+
+    await logAudit(actorFromProfile(profile), 'update', 'membership_plan', id, updateData.name ?? null, updateData)
 
     revalidateTag('memberships', {})
     revalidatePath('/memberships')
@@ -295,18 +311,22 @@ export async function createPlan(data: {
   description?: string
 }): Promise<{ error?: string }> {
   try {
-    await requireRole(['admin'])
+    const profile = await requireRole(['admin'])
     const supabase = await createClient()
 
-    const { error } = await supabase.from('membership_plans').insert({
+    const { data: inserted, error } = await supabase.from('membership_plans').insert({
       name: data.name,
       duration_months: data.duration_months,
       fee: data.fee,
       description: data.description ?? null,
       is_active: true,
-    })
+    }).select('id').single()
 
     if (error) throw error
+
+    await logAudit(actorFromProfile(profile), 'create', 'membership_plan', (inserted as { id: string } | null)?.id ?? null, data.name, {
+      duration_months: data.duration_months, fee: data.fee,
+    })
 
     revalidateTag('memberships', {})
     revalidatePath('/memberships')
@@ -418,6 +438,14 @@ export async function updateMembershipExpiry(
       performed_by_user_id: profile.user_id,
     })
     if (logError) console.error('updateMembershipExpiry: audit log failed —', logError.message)
+
+    await logAudit(actorFromProfile(profile), 'update', 'membership', membershipId, null, {
+      field: 'expiry_date',
+      old_expiry_date: (membership as { expiry_date: string }).expiry_date,
+      new_expiry_date: data.new_expiry_date,
+      reason: data.reason.trim(),
+      edited_by_user_id: data.edited_by_user_id,
+    })
 
     revalidateTag('members', {})
     revalidatePath('/members')

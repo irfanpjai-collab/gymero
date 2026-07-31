@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth'
 import { revalidatePath, revalidateTag } from 'next/cache'
 import { syncPaymentsSheet } from '@/lib/sheets-backup'
+import { logAudit, actorFromProfile } from '@/lib/audit-log'
 import type { Payment } from '@/types'
 
 export async function getPayments(memberId?: string): Promise<Payment[]> {
@@ -93,6 +94,12 @@ export async function recordPayment(data: {
     if (error) throw error
 
     syncPaymentsSheet().catch((err) => console.error('[sheets] payments sync failed:', err))
+
+    const { data: memberForLog } = await supabase.from('members').select('full_name').eq('id', data.member_id).maybeSingle()
+    await logAudit(actorFromProfile(profile), 'create', 'payment', (inserted as { id: string }).id, memberForLog?.full_name ?? null, {
+      amount: data.amount, payment_method: data.payment_method, payment_type: payload.payment_type,
+    })
+
     revalidateTag('payments', {})
     revalidatePath('/payments')
     return { payment: inserted as Payment }

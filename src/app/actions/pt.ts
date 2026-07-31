@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth'
 import { revalidatePath, revalidateTag } from 'next/cache'
 import { pickCurrentMembership, getExpiryDateFromPlan } from '@/lib/utils'
+import { logAudit, actorFromProfile } from '@/lib/audit-log'
 import type { PtPlan } from '@/types'
 
 // PT is tracked entirely separately from the regular membership system —
@@ -35,18 +36,22 @@ export async function createPtPlan(data: {
   description?: string
 }): Promise<{ error?: string }> {
   try {
-    await requireRole(['admin'])
+    const profile = await requireRole(['admin'])
     const supabase = await createClient()
 
-    const { error } = await supabase.from('pt_plans').insert({
+    const { data: inserted, error } = await supabase.from('pt_plans').insert({
       name: data.name,
       duration_months: data.duration_months,
       fee: data.fee,
       description: data.description ?? null,
       is_active: true,
-    })
+    }).select('id').single()
 
     if (error) throw error
+
+    await logAudit(actorFromProfile(profile), 'create', 'pt_plan', (inserted as { id: string } | null)?.id ?? null, data.name, {
+      duration_months: data.duration_months, fee: data.fee,
+    })
 
     revalidateTag('coaches', {})
     revalidatePath('/coaches')
@@ -256,6 +261,11 @@ export async function assignPtMembership(data: {
       .from('coach_members')
       .upsert({ coach_id: data.coach_id, member_id: data.member_id }, { onConflict: 'coach_id,member_id', ignoreDuplicates: true })
 
+    const { data: memberForLog } = await supabase.from('members').select('full_name').eq('id', data.member_id).maybeSingle()
+    await logAudit(actorFromProfile(profile), 'create', 'pt_membership', (inserted as { id: string }).id, memberForLog?.full_name ?? null, {
+      coach_id: data.coach_id, plan_id: data.plan_id, amount: data.amount,
+    })
+
     revalidateTag('coaches', {})
     revalidateTag('payments', {})
     revalidatePath('/coaches')
@@ -269,11 +279,13 @@ export async function assignPtMembership(data: {
 
 export async function cancelPtMembership(id: string): Promise<{ error?: string }> {
   try {
-    await requireRole(['admin', 'receptionist'])
+    const profile = await requireRole(['admin', 'receptionist'])
     const supabase = await createClient()
 
     const { error } = await supabase.from('pt_memberships').update({ status: 'cancelled' }).eq('id', id)
     if (error) throw error
+
+    await logAudit(actorFromProfile(profile), 'update', 'pt_membership', id, null, { status: 'cancelled' })
 
     revalidateTag('coaches', {})
     revalidatePath('/coaches')

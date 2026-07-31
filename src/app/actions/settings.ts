@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth'
 import { revalidateTag, revalidatePath } from 'next/cache'
 import { DEFAULT_GRACE_PERIOD_DAYS } from '@/lib/utils'
+import { logAudit, actorFromProfile } from '@/lib/audit-log'
 
 // Supabase's query errors are plain objects with a `.message`, not real
 // `Error` instances — `String(err)` on one of those prints "[object Object]"
@@ -44,6 +45,8 @@ export async function updateGracePeriodDays(days: number): Promise<{ error?: str
       .update({ grace_period_days: Math.round(days), updated_at: new Date().toISOString(), updated_by: profile.user_id })
       .eq('id', 1)
     if (error) throw error
+
+    await logAudit(actorFromProfile(profile), 'update', 'settings', 'grace_period_days', 'Grace Period Days', { new_value: Math.round(days) })
 
     revalidateTag('settings', {})
     revalidateTag('members', {})

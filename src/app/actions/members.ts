@@ -5,6 +5,8 @@ import { requireRole } from '@/lib/auth'
 import { revalidatePath, revalidateTag } from 'next/cache'
 import { syncMembersSheet, syncPaymentsSheet } from '@/lib/sheets-backup'
 import { pickCurrentMembership } from '@/lib/utils'
+import { logAudit, logAuditBatch, actorFromProfile } from '@/lib/audit-log'
+import type { AuditLogRow } from '@/lib/audit-log'
 import type { Member, ImportMemberRow, Membership } from '@/types'
 
 // Queues an outbound-only ADMS enroll command — a plain DB insert, nothing
@@ -203,6 +205,10 @@ export async function createMember(
     syncMembersSheet().catch((err) => console.error('[sheets] members sync failed:', err))
     syncPaymentsSheet().catch((err) => console.error('[sheets] payments sync failed:', err))
 
+    await logAudit(actorFromProfile(profile), 'create', 'member', (inserted as { id: string }).id, payload.full_name as string, {
+      member_id: memberIdRaw, mobile: payload.mobile, join_date: joinDate,
+    })
+
     revalidateTag('members', {})
     revalidateTag('payments', {})
     revalidatePath('/members')
@@ -274,6 +280,12 @@ export async function updateMember(
 
     syncMembersSheet().catch((err) => console.error('[sheets] members sync failed:', err))
 
+    const auditLabel = (payload.full_name as string | undefined) ?? currentRow?.full_name ?? null
+    await logAudit(actorFromProfile(profile), 'update', 'member', id, auditLabel, {
+      changed_fields: Object.keys(payload),
+      ...(oldMemberId !== null ? { old_member_id: oldMemberId, new_member_id: payload.member_id } : {}),
+    })
+
     revalidateTag('members', {})
     revalidatePath('/members')
     return { memberIdChanged: oldMemberId !== null }
@@ -290,7 +302,7 @@ export async function deleteMember(id: string): Promise<{ error?: string }> {
 
     const { data: existing } = await supabase
       .from('members')
-      .select('member_id')
+      .select('member_id, full_name')
       .eq('id', id)
       .single()
 
@@ -305,6 +317,15 @@ export async function deleteMember(id: string): Promise<{ error?: string }> {
       .eq('id', id)
 
     if (error) throw error
+
+    await logAudit(
+      actorFromProfile(profile),
+      'delete',
+      'member',
+      id,
+      (existing as { member_id: number; full_name: string } | null)?.full_name ?? null,
+      { member_id: (existing as { member_id: number } | null)?.member_id }
+    )
 
     if (existing) await removeMemberFromDevice((existing as { member_id: number }).member_id, profile.user_id)
 
@@ -323,13 +344,16 @@ export async function importMembers(
   let imported = 0
   const errors: string[] = []
   const newMemberIds: string[] = []
+  const auditRows: AuditLogRow[] = []
 
   let supabase: Awaited<ReturnType<typeof createClient>>
   let planMap: Record<string, string> = {}
   let requestedBy: string | undefined
+  let actor: AuditLogRow['actor'] = { user_id: null, name: null, role: null }
   try {
     const profile = await requireRole(['admin', 'receptionist'])
     requestedBy = profile.user_id
+    actor = actorFromProfile(profile)
     supabase = await createClient()
 
     // Fetch all plans once for lookup
@@ -391,6 +415,10 @@ export async function importMembers(
       } else {
         memberId = (insertedMember as { id: string }).id
         newMemberIds.push(memberId) // only genuinely new inserts, not re-imported existing members
+        auditRows.push({
+          actor, action: 'create', entityType: 'member', entityId: memberId, entityLabel: row.full_name,
+          details: { member_id: row.member_id, mobile: row.mobile, source: 'bulk_import' },
+        })
       }
 
       // Create membership if expiry_date is provided (amount must be > 0 — DB constraint)
@@ -425,6 +453,11 @@ export async function importMembers(
           const { error: membershipError } = await supabase.from('memberships').insert(membershipPayload)
           if (membershipError) {
             errors.push(`Row ${row.member_id ?? row.full_name}: member imported, but membership failed (${membershipError.message})`)
+          } else {
+            auditRows.push({
+              actor, action: 'create', entityType: 'membership', entityId: memberId, entityLabel: row.full_name,
+              details: { amount: row.amount_paid, expiry_date: row.expiry_date, source: 'bulk_import' },
+            })
           }
         }
       }
@@ -437,6 +470,7 @@ export async function importMembers(
   }
 
   await pushNewMembersToDevice(newMemberIds, requestedBy)
+  await logAuditBatch(auditRows)
   syncMembersSheet().catch((err) => console.error('[sheets] members sync failed:', err))
 
   revalidateTag('members', {})

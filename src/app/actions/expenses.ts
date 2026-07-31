@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth'
 import { revalidatePath, revalidateTag } from 'next/cache'
 import { syncExpensesSheet } from '@/lib/sheets-backup'
+import { logAudit, actorFromProfile } from '@/lib/audit-log'
 
 // Plain runtime exports (consts/arrays) don't survive the 'use server'
 // client/server boundary — only async functions do. The category list itself
@@ -62,7 +63,7 @@ export async function createExpense(data: {
   try {
     const profile = await requireRole(['admin'])
     const supabase = await createClient()
-    const { error } = await supabase.from('expenses').insert({
+    const { data: inserted, error } = await supabase.from('expenses').insert({
       category: data.category,
       description: data.description,
       amount: data.amount,
@@ -71,9 +72,12 @@ export async function createExpense(data: {
       notes: data.notes ?? null,
       status: 'pending',
       created_by: profile.user_id,
-    })
+    }).select('id').single()
     if (error) throw error
     syncExpensesSheet().catch((err) => console.error('[sheets] expenses sync failed:', err))
+    await logAudit(actorFromProfile(profile), 'create', 'expense', (inserted as { id: string } | null)?.id ?? null, data.description, {
+      category: data.category, amount: data.amount,
+    })
     revalidateTag('expenses', {})
     revalidatePath('/expenses')
     return {}
@@ -85,7 +89,7 @@ export async function createExpense(data: {
 
 export async function markExpensePaid(id: string): Promise<{ error?: string }> {
   try {
-    await requireRole(['admin'])
+    const profile = await requireRole(['admin'])
     const supabase = await createClient()
     const { error } = await supabase
       .from('expenses')
@@ -93,6 +97,7 @@ export async function markExpensePaid(id: string): Promise<{ error?: string }> {
       .eq('id', id)
     if (error) throw error
     syncExpensesSheet().catch((err) => console.error('[sheets] expenses sync failed:', err))
+    await logAudit(actorFromProfile(profile), 'update', 'expense', id, null, { status: 'paid' })
     revalidateTag('expenses', {})
     revalidatePath('/expenses')
     return {}
@@ -104,11 +109,13 @@ export async function markExpensePaid(id: string): Promise<{ error?: string }> {
 
 export async function deleteExpense(id: string): Promise<{ error?: string }> {
   try {
-    await requireRole(['admin'])
+    const profile = await requireRole(['admin'])
     const supabase = await createClient()
+    const { data: existing } = await supabase.from('expenses').select('description, amount').eq('id', id).maybeSingle()
     const { error } = await supabase.from('expenses').delete().eq('id', id)
     if (error) throw error
     syncExpensesSheet().catch((err) => console.error('[sheets] expenses sync failed:', err))
+    await logAudit(actorFromProfile(profile), 'delete', 'expense', id, existing?.description ?? null, { amount: existing?.amount })
     revalidateTag('expenses', {})
     revalidatePath('/expenses')
     return {}

@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth'
 import { revalidatePath, revalidateTag } from 'next/cache'
+import { logAudit, actorFromProfile } from '@/lib/audit-log'
 import type { Coach, Member } from '@/types'
 
 // Coaches get pushed to the device the same way members do (see
@@ -66,15 +67,19 @@ export async function createCoach(data: FormData): Promise<{ error?: string }> {
     const { data: inserted, error } = await supabase
       .from('coaches')
       .insert(payload)
-      .select('device_number, name')
+      .select('id, device_number, name')
       .single()
 
     if (error) throw error
 
-    if (inserted) {
-      const row = inserted as { device_number: number | null; name: string }
-      await pushCoachToDevice(row.device_number, row.name, profile.user_id)
+    const insertedRow = inserted as { id: string; device_number: number | null; name: string } | null
+    if (insertedRow) {
+      await pushCoachToDevice(insertedRow.device_number, insertedRow.name, profile.user_id)
     }
+
+    await logAudit(actorFromProfile(profile), 'create', 'coach', insertedRow?.id ?? null, insertedRow?.name ?? (payload.name as string), {
+      mobile: payload.mobile, specialization: payload.specialization,
+    })
 
     revalidateTag('coaches', {})
     revalidatePath('/coaches')
@@ -123,6 +128,10 @@ export async function updateCoach(
       await pushCoachToDevice(currentRow.device_number, payload.name as string, profile.user_id)
     }
 
+    await logAudit(actorFromProfile(profile), 'update', 'coach', id, (payload.name as string | undefined) ?? currentRow?.name ?? null, {
+      changed_fields: Object.keys(payload),
+    })
+
     revalidateTag('coaches', {})
     revalidatePath('/coaches')
     return {}
@@ -158,7 +167,7 @@ export async function assignMember(
   memberId: string
 ): Promise<{ error?: string }> {
   try {
-    await requireRole(['admin', 'receptionist'])
+    const profile = await requireRole(['admin', 'receptionist'])
     const supabase = await createClient()
 
     const { error } = await supabase
@@ -166,6 +175,8 @@ export async function assignMember(
       .upsert({ coach_id: coachId, member_id: memberId }, { onConflict: 'coach_id,member_id', ignoreDuplicates: true })
 
     if (error) throw error
+
+    await logAudit(actorFromProfile(profile), 'create', 'coach_assignment', `${coachId}:${memberId}`, null, { coach_id: coachId, member_id: memberId })
 
     revalidateTag('coaches', {})
     revalidatePath('/coaches')
@@ -181,7 +192,7 @@ export async function unassignMember(
   memberId: string
 ): Promise<{ error?: string }> {
   try {
-    await requireRole(['admin', 'receptionist'])
+    const profile = await requireRole(['admin', 'receptionist'])
     const supabase = await createClient()
 
     const { error } = await supabase
@@ -191,6 +202,8 @@ export async function unassignMember(
       .eq('member_id', memberId)
 
     if (error) throw error
+
+    await logAudit(actorFromProfile(profile), 'delete', 'coach_assignment', `${coachId}:${memberId}`, null, { coach_id: coachId, member_id: memberId })
 
     revalidateTag('coaches', {})
     revalidatePath('/coaches')

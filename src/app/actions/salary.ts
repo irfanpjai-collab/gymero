@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth'
 import { revalidatePath, revalidateTag } from 'next/cache'
+import { logAudit, actorFromProfile } from '@/lib/audit-log'
 
 export interface StaffSalary {
   id: string
@@ -58,7 +59,7 @@ export async function createSalary(data: {
   try {
     const profile = await requireRole(['admin'])
     const supabase = await createClient()
-    const { error } = await supabase.from('staff_salaries').insert({
+    const { data: inserted, error } = await supabase.from('staff_salaries').insert({
       staff_name: data.staff_name,
       staff_type: data.staff_type,
       coach_id: data.coach_id ?? null,
@@ -69,8 +70,11 @@ export async function createSalary(data: {
       notes: data.notes ?? null,
       status: 'pending',
       created_by: profile.user_id,
-    })
+    }).select('id').single()
     if (error) throw error
+    await logAudit(actorFromProfile(profile), 'create', 'salary', (inserted as { id: string } | null)?.id ?? null, data.staff_name, {
+      month: data.month, base_salary: data.base_salary,
+    })
     revalidateTag('salary', {})
     revalidatePath('/salary')
     return {}
@@ -82,13 +86,14 @@ export async function createSalary(data: {
 
 export async function markSalaryPaid(id: string): Promise<{ error?: string }> {
   try {
-    await requireRole(['admin'])
+    const profile = await requireRole(['admin'])
     const supabase = await createClient()
     const { error } = await supabase
       .from('staff_salaries')
       .update({ status: 'paid', paid_at: new Date().toISOString().slice(0, 10) })
       .eq('id', id)
     if (error) throw error
+    await logAudit(actorFromProfile(profile), 'update', 'salary', id, null, { status: 'paid' })
     revalidateTag('salary', {})
     revalidatePath('/salary')
     return {}
@@ -103,13 +108,14 @@ export async function updateSalary(
   data: Partial<Pick<StaffSalary, 'base_salary' | 'bonus' | 'deductions' | 'notes' | 'status'>>
 ): Promise<{ error?: string }> {
   try {
-    await requireRole(['admin'])
+    const profile = await requireRole(['admin'])
     const supabase = await createClient()
     const { error } = await supabase
       .from('staff_salaries')
       .update(data)
       .eq('id', id)
     if (error) throw error
+    await logAudit(actorFromProfile(profile), 'update', 'salary', id, null, { changed_fields: Object.keys(data) })
     revalidateTag('salary', {})
     revalidatePath('/salary')
     return {}
@@ -121,10 +127,12 @@ export async function updateSalary(
 
 export async function deleteSalary(id: string): Promise<{ error?: string }> {
   try {
-    await requireRole(['admin'])
+    const profile = await requireRole(['admin'])
     const supabase = await createClient()
+    const { data: existing } = await supabase.from('staff_salaries').select('staff_name, net_salary').eq('id', id).maybeSingle()
     const { error } = await supabase.from('staff_salaries').delete().eq('id', id)
     if (error) throw error
+    await logAudit(actorFromProfile(profile), 'delete', 'salary', id, existing?.staff_name ?? null, { net_salary: existing?.net_salary })
     revalidateTag('salary', {})
     revalidatePath('/salary')
     return {}

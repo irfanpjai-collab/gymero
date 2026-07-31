@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { requireRole } from '@/lib/auth'
 import { revalidatePath } from 'next/cache'
 import { queueMissingEnrollments } from '@/lib/adms-enrollment'
+import { logAudit, actorFromProfile } from '@/lib/audit-log'
 import type { BiometricAttendance } from '@/types'
 
 export interface AdmsDevice {
@@ -58,6 +59,8 @@ async function queueCommand(
       success: true,
     })
 
+    await logAudit(actorFromProfile(profile), 'update', 'device_command', String(memberId), fullName ?? null, { operation })
+
     revalidatePath('/biometric')
     return {}
   } catch (err) {
@@ -75,6 +78,11 @@ export async function bulkEnrollAllMembers(): Promise<{ queued: number; skipped:
     const profile = await requireRole(['admin', 'receptionist'])
     const supabase = await createClient()
     const result = await queueMissingEnrollments(supabase, profile.user_id)
+    if (result.queued > 0) {
+      await logAudit(actorFromProfile(profile), 'update', 'device_command', null, null, {
+        operation: 'bulk_enroll', queued: result.queued, skipped: result.skipped,
+      })
+    }
     revalidatePath('/biometric')
     return result
   } catch (err) {
