@@ -1,14 +1,17 @@
 'use client'
 
 import Link from 'next/link'
+import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
+import { createClient } from '@/lib/supabase/client'
 import {
   LayoutDashboard,
   Users,
   Landmark,
   Receipt,
   Settings,
+  ClipboardList,
 } from 'lucide-react'
 
 const navItems = [
@@ -21,11 +24,31 @@ const navItems = [
 
 export default function MobileNav() {
   const pathname = usePathname()
+  // Same super-admin-only gating as the desktop Sidebar — fetched client-side
+  // since neither nav has server-rendered profile data to draw on.
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false)
+
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      if (!user) return
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('is_super_admin')
+        .eq('user_id', user.id)
+        .single()
+      if (profile?.is_super_admin) setIsSuperAdmin(true)
+    })
+  }, [])
+
+  const items = isSuperAdmin
+    ? [...navItems, { href: '/logs', icon: ClipboardList, label: 'Logs' }]
+    : navItems
 
   return (
     <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-sidebar/95 backdrop-blur-xl border-t border-border/50 px-2 pb-safe">
       <div className="flex items-center justify-around py-2">
-        {navItems.map((item) => {
+        {items.map((item) => {
           const isActive =
             item.href === '/dashboard'
               ? pathname === '/dashboard'

@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
+import { logAuthEvent } from '@/app/actions/auth-log'
 import {
   LayoutDashboard,
   Users,
@@ -94,6 +95,9 @@ export default function Sidebar() {
     : navGroups
 
   const handleLogout = async () => {
+    // Must log before signOut() — once the session is cleared, logAuthEvent
+    // has no authenticated user left to attribute the entry to.
+    await logAuthEvent('logout').catch(console.error)
     const supabase = createClient()
     await supabase.auth.signOut()
     router.push('/login')

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
+import { logAuthEvent } from '@/app/actions/auth-log'
 import type { UserProfile } from '@/types'
 import { useTheme } from 'next-themes'
 import { cn } from '@/lib/utils'
@@ -92,16 +93,26 @@ export default function TopBar() {
   const { theme, setTheme }         = useTheme()
   const [mounted, setMounted]       = useState(false)
 
-  // Close drawer on route change
-  useEffect(() => { setDrawerOpen(false) }, [pathname])
+  // Close drawer on route change — reacting to external navigation (including
+  // the browser back/forward buttons, not just this component's own links),
+  // not state derivable during render.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setDrawerOpen(false)
+  }, [pathname])
 
   const handleLogout = async () => {
+    // Must log before signOut() — see Sidebar's handleLogout for why.
+    await logAuthEvent('logout').catch(console.error)
     const supabase = createClient()
     await supabase.auth.signOut()
     router.push('/login')
   }
 
   useEffect(() => {
+    // Client-only mount flag — next-themes can't know the real theme until
+    // after mount (would mismatch the server-rendered markup otherwise).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true)
     const fetchProfile = async () => {
       const supabase = createClient()

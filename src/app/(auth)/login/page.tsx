@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { toast } from 'sonner'
+import { logAuthEvent } from '@/app/actions/auth-log'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -18,6 +19,7 @@ export default function LoginPage() {
       const supabase = createClient()
       const { error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) throw error
+      logAuthEvent('login').catch(console.error)
       router.push('/dashboard')
       router.refresh()
     } catch (err: unknown) {
