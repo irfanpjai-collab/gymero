@@ -271,6 +271,7 @@ export interface ExpiredCheckIn {
   memberId: string
   memberNumber: number
   fullName: string
+  mobile: string
   punchedAt: string
   expiryDate: string | null
 }
@@ -282,7 +283,7 @@ const _getExpiredCheckIns = async (limit = 10): Promise<ExpiredCheckIn[]> => {
     .from('attendance_logs')
     .select(`
       id, punched_at,
-      member:members!attendance_logs_member_id_fkey(id, member_id, full_name)
+      member:members!attendance_logs_member_id_fkey(id, member_id, full_name, mobile)
     `)
     .not('member_id', 'is', null)
     .order('punched_at', { ascending: false })
@@ -290,7 +291,7 @@ const _getExpiredCheckIns = async (limit = 10): Promise<ExpiredCheckIn[]> => {
 
   if (error) return []
 
-  type Row = { id: string; punched_at: string; member: { id: string; member_id: number; full_name: string } | null }
+  type Row = { id: string; punched_at: string; member: { id: string; member_id: number; full_name: string; mobile: string } | null }
   const rows = (punches ?? []) as unknown as Row[]
 
   const memberIds = [...new Set(rows.map(r => r.member?.id).filter(Boolean))] as string[]
@@ -319,6 +320,7 @@ const _getExpiredCheckIns = async (limit = 10): Promise<ExpiredCheckIn[]> => {
       memberId: row.member.id,
       memberNumber: row.member.member_id,
       fullName: row.member.full_name,
+      mobile: row.member.mobile,
       punchedAt: row.punched_at,
       expiryDate: mem?.expiry_date ?? null,
     })

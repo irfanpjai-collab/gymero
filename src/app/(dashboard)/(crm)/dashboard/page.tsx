@@ -5,7 +5,6 @@ import {
   Clock,
   IndianRupee,
   AlertCircle,
-  MessageCircle,
   Timer,
   TrendingUp,
   Ticket,
@@ -25,7 +24,18 @@ import {
 } from '@/lib/cached-queries'
 import { getRecentCheckIns } from '@/app/actions/adms'
 import WelcomeBanner from '@/components/dashboard/WelcomeBanner'
+import ContactButtons from '@/components/dashboard/ContactButtons'
 import { formatDate, formatDateTime, formatCurrency } from '@/lib/utils'
+
+function expiringMessage(fullName: string, expiryDate: string, daysLeft: number): string {
+  const dueText = daysLeft <= 0 ? 'is due today' : `is due on ${formatDate(expiryDate)}`
+  return `Hello ${fullName},\n\nYour Fitness membership fee ${dueText}.\n\nPlease renew your membership to continue uninterrupted access.\n\nThank you,\nGreen Power Gym`
+}
+
+function expiredMessage(fullName: string, expiryDate: string | null): string {
+  const expiredText = expiryDate ? `expired on ${formatDate(expiryDate)}` : 'has expired'
+  return `Hello ${fullName},\n\nYour Fitness membership ${expiredText}.\n\nPlease renew your membership to continue uninterrupted access.\n\nThank you,\nGreen Power Gym`
+}
 
 function StatCard({
   label,
@@ -270,7 +280,7 @@ export default async function DashboardPage() {
                       <td className="px-5 py-3">
                         <Link href={`/members/${member.id}`} className="hover:text-primary transition-colors">
                           <p className="font-medium text-foreground leading-none">{member.full_name}</p>
-                          <p className="text-muted-foreground/60 text-xs mt-0.5">#{member.member_id}</p>
+                          <p className="text-muted-foreground/60 text-xs mt-0.5">#{member.member_id} · {member.mobile}</p>
                         </Link>
                       </td>
                       <td className="px-3 py-3 text-muted-foreground whitespace-nowrap">
@@ -290,13 +300,12 @@ export default async function DashboardPage() {
                         </span>
                       </td>
                       <td className="px-5 py-3 text-right">
-                        <Link
-                          href={`/whatsapp?member=${member.id}`}
-                          className="inline-flex items-center gap-1.5 text-xs bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded-lg px-2.5 py-1.5 font-medium transition-colors"
-                        >
-                          <MessageCircle className="w-3 h-3" />
-                          Remind
-                        </Link>
+                        <ContactButtons
+                          memberId={member.id}
+                          mobile={member.mobile}
+                          message={expiringMessage(member.full_name, member.expiry_date, member.days_left)}
+                          messageType={member.days_left <= 0 ? 'due_today' : 'due_in_3_days'}
+                        />
                       </td>
                     </tr>
                   ))}
@@ -368,11 +377,17 @@ export default async function DashboardPage() {
                           {member.full_name}
                         </Link>
                         <p className="text-muted-foreground/60 text-xs">
-                          Expired {member.days_since_expiry}d ago · <span className={urgency}>{graceDaysLeft}d left</span>
+                          {member.mobile} · Expired {member.days_since_expiry}d ago · <span className={urgency}>{graceDaysLeft}d left</span>
                         </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2 ml-3 flex-shrink-0">
+                      <ContactButtons
+                        memberId={member.id}
+                        mobile={member.mobile}
+                        message={expiredMessage(member.full_name, member.expiry_date)}
+                        messageType="expired"
+                      />
                       <Link
                         href={`/members/${member.id}?renew=1`}
                         className="inline-flex items-center gap-1 text-xs bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded-lg px-2.5 py-1.5 font-medium transition-colors"
@@ -416,18 +431,26 @@ export default async function DashboardPage() {
                       {c.fullName} <span className="text-muted-foreground/60 font-normal">#{c.memberNumber}</span>
                     </Link>
                     <p className="text-muted-foreground/60 text-xs">
-                      Checked in {formatDateTime(c.punchedAt)}
+                      {c.mobile} · Checked in {formatDateTime(c.punchedAt)}
                       {c.expiryDate ? ` · expired ${formatDate(c.expiryDate)}` : ' · no membership on record'}
                     </p>
                   </div>
                 </div>
-                <Link
-                  href={`/members/${c.memberId}?renew=1`}
-                  className="inline-flex items-center gap-1 text-xs bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded-lg px-2.5 py-1.5 font-medium transition-colors flex-shrink-0 ml-3"
-                >
-                  <RefreshCw className="w-3 h-3" />
-                  Renew
-                </Link>
+                <div className="flex items-center gap-2 flex-shrink-0 ml-3">
+                  <ContactButtons
+                    memberId={c.memberId}
+                    mobile={c.mobile}
+                    message={expiredMessage(c.fullName, c.expiryDate)}
+                    messageType="expired"
+                  />
+                  <Link
+                    href={`/members/${c.memberId}?renew=1`}
+                    className="inline-flex items-center gap-1 text-xs bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded-lg px-2.5 py-1.5 font-medium transition-colors"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    Renew
+                  </Link>
+                </div>
               </div>
             ))}
           </div>
