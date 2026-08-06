@@ -13,7 +13,6 @@ import {
   UserPlus,
   UserCheck,
   Trash2,
-  Ban,
   CircleCheck,
   Search,
   Clock,
@@ -21,16 +20,12 @@ import {
   Calendar,
   ChevronDown,
   ChevronUp,
-  DoorOpen,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   getBiometricPageData,
   queueEnroll,
   queueRemove,
-  queueBlock,
-  queueUnblock,
-  queueUnlockDoor,
   bulkEnrollAllMembers,
   type AdmsDevice,
   type AdmsCommand,
@@ -89,18 +84,6 @@ function FingerprintBadge({ enrolled }: { enrolled: boolean }) {
   )
 }
 
-function AccessBadge({ blocked }: { blocked: boolean }) {
-  return blocked ? (
-    <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border text-red-400 bg-red-500/10 border-red-500/20">
-      <Ban className="w-3 h-3" /> Blocked
-    </span>
-  ) : (
-    <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full border text-emerald-400 bg-emerald-500/10 border-emerald-500/20">
-      <CircleCheck className="w-3 h-3" /> Active
-    </span>
-  )
-}
-
 function todayStr() {
   return new Date().toISOString().split('T')[0]
 }
@@ -126,7 +109,6 @@ export default function BiometricClient({ initialData }: { initialData: Biometri
   const [search, setSearch] = useState('')
   const [busyMemberId, setBusyMemberId] = useState<number | null>(null)
   const [syncing, setSyncing] = useState(false)
-  const [unlocking, setUnlocking] = useState(false)
   const [attendanceDate, setAttendanceDate] = useState(todayStr())
   const [membershipFilter, setMembershipFilter] = useState<'all' | 'active' | 'expired' | 'none'>('all')
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
@@ -193,28 +175,17 @@ export default function BiometricClient({ initialData }: { initialData: Biometri
   }, [fetchData])
 
   async function handleAction(
-    action: 'enroll' | 'remove' | 'block' | 'unblock',
+    action: 'enroll' | 'remove',
     member: MemberLite,
   ) {
     setBusyMemberId(member.member_id)
     const res =
       action === 'enroll' ? await queueEnroll(member.member_id, member.full_name) :
-      action === 'remove' ? await queueRemove(member.member_id) :
-      action === 'block'  ? await queueBlock(member.member_id) :
-                             await queueUnblock(member.member_id)
+                             await queueRemove(member.member_id)
 
     if (res.error) toast.error(res.error)
     else toast.success(`Queued — will apply next time the device checks in`)
     setBusyMemberId(null)
-    loadAll()
-  }
-
-  async function handleUnlockDoor() {
-    setUnlocking(true)
-    const res = await queueUnlockDoor()
-    if (res.error) toast.error(res.error)
-    else toast.success(`Unlock queued — applies within a few seconds, on the device's next check-in`)
-    setUnlocking(false)
     loadAll()
   }
 
@@ -295,15 +266,6 @@ export default function BiometricClient({ initialData }: { initialData: Biometri
             {deviceOnline ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
             {deviceOnline ? 'Device seen recently' : 'No device check-in in 5+ min'}
           </span>
-          <button
-            onClick={handleUnlockDoor}
-            disabled={unlocking}
-            title="Unlocks the access-control door — not tied to any specific member"
-            className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 disabled:opacity-50 rounded-xl text-xs text-emerald-400 font-medium transition-colors"
-          >
-            {unlocking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <DoorOpen className="w-3.5 h-3.5" />}
-            Unlock Door
-          </button>
           <button onClick={loadAll} className="inline-flex items-center gap-2 px-3 py-1.5 bg-card border border-border hover:bg-muted rounded-xl text-xs text-muted-foreground transition-colors">
             <RefreshCw className="w-3.5 h-3.5" /> Refresh
           </button>
@@ -476,7 +438,7 @@ export default function BiometricClient({ initialData }: { initialData: Biometri
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border">
-                  {['Member', 'ID', 'Pushed', 'Fingerprint', 'Access', ''].map((h, i) => (
+                  {['Member', 'ID', 'Pushed', 'Fingerprint', ''].map((h, i) => (
                     <th key={i} className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase">{h}</th>
                   ))}
                 </tr>
@@ -491,17 +453,10 @@ export default function BiometricClient({ initialData }: { initialData: Biometri
                       <td className="px-4 py-2.5 text-muted-foreground font-mono text-xs">#{m.member_id}</td>
                       <td className="px-4 py-2.5"><PushedBadge pushed={status.pushedToDevice} /></td>
                       <td className="px-4 py-2.5"><FingerprintBadge enrolled={status.fingerprintEnrolled} /></td>
-                      <td className="px-4 py-2.5"><AccessBadge blocked={status.blocked} /></td>
                       <td className="px-4 py-2.5 text-right">
                         <div className="flex items-center justify-end gap-3">
                           <button disabled={busy} onClick={() => handleAction('enroll', m)} className="inline-flex items-center gap-1 text-xs text-primary hover:text-primary/70 disabled:opacity-50">
                             <UserPlus className="w-3.5 h-3.5" /> Enroll
-                          </button>
-                          <button disabled={busy} onClick={() => handleAction('block', m)} className="inline-flex items-center gap-1 text-xs text-amber-400 hover:text-amber-300 disabled:opacity-50">
-                            <Ban className="w-3.5 h-3.5" /> Block
-                          </button>
-                          <button disabled={busy} onClick={() => handleAction('unblock', m)} className="inline-flex items-center gap-1 text-xs text-emerald-400 hover:text-emerald-300 disabled:opacity-50">
-                            <CircleCheck className="w-3.5 h-3.5" /> Unblock
                           </button>
                           <button disabled={busy} onClick={() => handleAction('remove', m)} className="inline-flex items-center gap-1 text-xs text-red-400 hover:text-red-300 disabled:opacity-50">
                             <Trash2 className="w-3.5 h-3.5" /> Remove
