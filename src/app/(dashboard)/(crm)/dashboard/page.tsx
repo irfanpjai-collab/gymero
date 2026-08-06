@@ -9,9 +9,6 @@ import {
   TrendingUp,
   Ticket,
   RefreshCw,
-  Fingerprint,
-  LogIn,
-  LogOut,
 } from 'lucide-react'
 import {
   getCachedDashboardStats,
@@ -24,7 +21,8 @@ import { getCheckInsForDate } from '@/app/actions/adms'
 import WelcomeBanner from '@/components/dashboard/WelcomeBanner'
 import ContactButtons from '@/components/dashboard/ContactButtons'
 import ExpiredCheckInsPanel from '@/components/dashboard/ExpiredCheckInsPanel'
-import { formatDate, formatDateTime, formatCurrency, getISTDateStr, expiredMembershipMessage } from '@/lib/utils'
+import TodaysCheckInsCard from '@/components/dashboard/TodaysCheckInsCard'
+import { formatDate, formatCurrency, getISTDateStr, expiredMembershipMessage } from '@/lib/utils'
 
 function expiringMessage(fullName: string, expiryDate: string, daysLeft: number): string {
   const dueText = daysLeft <= 0 ? 'is due today' : `is due on ${formatDate(expiryDate)}`
@@ -154,74 +152,8 @@ export default async function DashboardPage() {
         ))}
       </div>
 
-      {/* Today's biometric check-ins, with the same Active/Expired status shown on the Biometric page */}
-      <div className="bg-card rounded-2xl border border-border overflow-hidden animate-fade-in-up card-hover">
-        <div className="px-5 py-4 border-b border-border flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
-              <Fingerprint className="w-4 h-4 text-primary" />
-            </div>
-            <div>
-              <h2 className="font-semibold text-foreground text-sm">Today&apos;s Check-Ins</h2>
-              <p className="text-muted-foreground text-[11px]">Biometric device activity</p>
-            </div>
-            {checkIns.length > 0 && (
-              <span className="text-xs bg-primary/10 text-primary border border-primary/20 rounded-full px-2 py-0.5 font-medium">
-                {checkIns.length}
-              </span>
-            )}
-          </div>
-          <Link href="/biometric" className="text-xs text-primary hover:text-primary/70 transition-colors font-medium">
-            View all →
-          </Link>
-        </div>
-
-        {checkIns.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-center px-6">
-            <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
-              <Fingerprint className="w-6 h-6 text-muted-foreground" />
-            </div>
-            <p className="text-muted-foreground text-sm font-medium">No check-ins yet today</p>
-            <p className="text-muted-foreground/60 text-xs mt-1">Fingerprint punches will appear here as they happen.</p>
-          </div>
-        ) : (
-          <div className="divide-y divide-border">
-            {checkIns.map((c, i) => {
-              const isIn = c.punch === 0 || c.punch === 4
-              return (
-                <div key={`${c.memberId ?? c.fullName}-${i}`} className="flex items-center justify-between px-5 py-3 table-row-hover">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-9 h-9 rounded-full bg-muted border border-border flex items-center justify-center flex-shrink-0">
-                      <span className="text-foreground text-xs font-bold">{c.fullName.charAt(0).toUpperCase()}</span>
-                    </div>
-                    <div className="min-w-0">
-                      {c.memberId ? (
-                        <Link href={`/members/${c.memberId}`} className="text-foreground text-sm font-medium hover:text-primary transition-colors truncate block">
-                          {c.fullName} {c.memberNumber && <span className="text-muted-foreground/60 font-normal">#{c.memberNumber}</span>}
-                        </Link>
-                      ) : (
-                        <p className="text-foreground text-sm font-medium truncate">{c.fullName}</p>
-                      )}
-                      <p className="text-muted-foreground/60 text-xs inline-flex items-center gap-1">
-                        {isIn ? <LogIn className="w-3 h-3 text-emerald-400" /> : <LogOut className="w-3 h-3 text-blue-400" />}
-                        {formatDateTime(c.timestamp)}
-                      </p>
-                    </div>
-                  </div>
-                  <span className={`inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full border flex-shrink-0 ml-3 ${
-                    c.membershipStatus === 'active' ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' :
-                    c.membershipStatus === 'expired' ? 'text-red-400 bg-red-500/10 border-red-500/20' :
-                    c.membershipStatus === 'coach' ? 'text-blue-400 bg-blue-500/10 border-blue-500/20' :
-                    'text-muted-foreground bg-muted/30 border-border'
-                  }`}>
-                    {c.membershipStatus === 'active' ? 'Active' : c.membershipStatus === 'expired' ? 'Expired' : c.membershipStatus === 'coach' ? 'Coach' : 'No membership'}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
+      {/* Today's biometric check-ins, grouped one row per person, capped with a "View all" toggle */}
+      <TodaysCheckInsCard checkIns={checkIns} />
 
       {/* Two-column section */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">

@@ -5,9 +5,13 @@ import Link from 'next/link'
 import { ShieldAlert, Calendar, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react'
 import { getCheckInsForDate, type RecentCheckIn } from '@/app/actions/adms'
 import ContactButtons from '@/components/dashboard/ContactButtons'
-import { formatDate, formatDateTime, getISTDateStr, expiredMembershipMessage } from '@/lib/utils'
+import { formatDate, formatDateTime, getISTDateStr, expiredMembershipMessage, groupCheckInsByPerson } from '@/lib/utils'
 
 const INITIAL_VISIBLE = 8
+
+function groupKey(c: RecentCheckIn): string {
+  return c.memberId ?? c.fullName
+}
 
 // Separate from the plain "Today's Check-Ins" list on purpose — this one is
 // specifically an anomaly/follow-up view (who punched in with no active
@@ -26,6 +30,7 @@ export default function ExpiredCheckInsPanel({
   )
   const [loading, setLoading] = useState(false)
   const [showAll, setShowAll] = useState(false)
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
 
   const todayIST = getISTDateStr()
   const isToday = date === todayIST
@@ -34,12 +39,23 @@ export default function ExpiredCheckInsPanel({
     setDate(nextDate)
     setLoading(true)
     setShowAll(false)
+    setExpandedGroups(new Set())
     const data = await getCheckInsForDate(nextDate)
     setCheckIns(data.filter(c => c.membershipStatus === 'expired' || c.membershipStatus === 'none'))
     setLoading(false)
   }
 
-  const visible = showAll ? checkIns : checkIns.slice(0, INITIAL_VISIBLE)
+  function toggleGroup(key: string) {
+    setExpandedGroups(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  const groups = groupCheckInsByPerson(checkIns, groupKey, c => c.timestamp)
+  const visible = showAll ? groups : groups.slice(0, INITIAL_VISIBLE)
 
   return (
     <div className="bg-card rounded-2xl border border-red-500/20 overflow-hidden animate-fade-in-up card-hover">
@@ -52,9 +68,9 @@ export default function ExpiredCheckInsPanel({
             <h2 className="font-semibold text-foreground text-sm">Checked In After Expiry</h2>
             <p className="text-muted-foreground text-[11px]">Members with no active membership who still punched in on the device</p>
           </div>
-          {checkIns.length > 0 && (
+          {groups.length > 0 && (
             <span className="text-xs bg-red-500/10 text-red-400 border border-red-500/20 rounded-full px-2 py-0.5 font-medium">
-              {checkIns.length}
+              {groups.length}
             </span>
           )}
         </div>
@@ -84,7 +100,7 @@ export default function ExpiredCheckInsPanel({
         <div className="flex items-center justify-center py-12">
           <RefreshCw className="w-4 h-4 animate-spin text-muted-foreground" />
         </div>
-      ) : checkIns.length === 0 ? (
+      ) : groups.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-center px-6">
           <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
             <ShieldAlert className="w-6 h-6 text-muted-foreground" />
@@ -96,49 +112,69 @@ export default function ExpiredCheckInsPanel({
       ) : (
         <>
           <div className="divide-y divide-border">
-            {visible.map((c, i) => (
-              <div key={`${c.memberId ?? c.fullName}-${i}`} className="flex items-center justify-between px-5 py-3 table-row-hover gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-9 h-9 rounded-full bg-red-500/10 border border-red-500/15 flex items-center justify-center shrink-0">
-                    <span className="text-red-400 text-xs font-bold">{c.fullName.charAt(0).toUpperCase()}</span>
-                  </div>
-                  <div className="min-w-0">
-                    {c.memberId ? (
-                      <Link href={`/members/${c.memberId}`} className="text-foreground text-sm font-medium hover:text-primary transition-colors truncate block">
-                        {c.fullName} <span className="text-muted-foreground/60 font-normal">#{c.memberNumber}</span>
-                      </Link>
-                    ) : (
-                      <p className="text-foreground text-sm font-medium truncate">{c.fullName}</p>
+            {visible.map((group) => {
+              const c = group.latest
+              const expanded = expandedGroups.has(group.key)
+              return (
+                <div key={group.key}>
+                  <div
+                    onClick={() => group.all.length > 1 && toggleGroup(group.key)}
+                    className={`flex items-center justify-between px-5 py-3 table-row-hover gap-3 ${group.all.length > 1 ? 'cursor-pointer' : ''}`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-9 h-9 rounded-full bg-red-500/10 border border-red-500/15 flex items-center justify-center shrink-0">
+                        <span className="text-red-400 text-xs font-bold">{c.fullName.charAt(0).toUpperCase()}</span>
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          {group.all.length > 1 && (expanded ? <ChevronUp className="w-3.5 h-3.5 text-muted-foreground shrink-0" /> : <ChevronDown className="w-3.5 h-3.5 text-muted-foreground shrink-0" />)}
+                          {c.memberId ? (
+                            <Link href={`/members/${c.memberId}`} onClick={e => e.stopPropagation()} className="text-foreground text-sm font-medium hover:text-primary transition-colors truncate block">
+                              {c.fullName} <span className="text-muted-foreground/60 font-normal">#{c.memberNumber}</span>
+                            </Link>
+                          ) : (
+                            <p className="text-foreground text-sm font-medium truncate">{c.fullName}</p>
+                          )}
+                          {group.all.length > 1 && (
+                            <span className="text-xs text-muted-foreground bg-muted/50 rounded-full px-2 py-0.5">{group.all.length}</span>
+                          )}
+                        </div>
+                        <p className="text-muted-foreground/60 text-xs">
+                          {c.mobile ?? '—'} · Checked in {formatDateTime(c.timestamp)}
+                          {c.expiryDate ? ` · expired ${formatDate(c.expiryDate)}` : ' · no membership on record'}
+                        </p>
+                      </div>
+                    </div>
+                    {c.memberId && (
+                      <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
+                        {c.mobile && (
+                          <ContactButtons
+                            memberId={c.memberId}
+                            mobile={c.mobile}
+                            message={expiredMembershipMessage(c.fullName, c.expiryDate)}
+                            messageType="expired"
+                          />
+                        )}
+                        <Link
+                          href={`/members/${c.memberId}?renew=1`}
+                          className="inline-flex items-center gap-1 text-xs bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded-lg px-2.5 py-1.5 font-medium transition-colors"
+                        >
+                          <RefreshCw className="w-3 h-3" />
+                          Renew
+                        </Link>
+                      </div>
                     )}
-                    <p className="text-muted-foreground/60 text-xs">
-                      {c.mobile ?? '—'} · Checked in {formatDateTime(c.timestamp)}
-                      {c.expiryDate ? ` · expired ${formatDate(c.expiryDate)}` : ' · no membership on record'}
-                    </p>
                   </div>
+                  {expanded && group.all.slice(1).map((a, i) => (
+                    <div key={i} className="px-5 py-2 pl-[4.25rem] bg-muted/10 text-xs text-muted-foreground border-t border-border/50">
+                      ↳ checked in {formatDateTime(a.timestamp)}
+                    </div>
+                  ))}
                 </div>
-                {c.memberId && (
-                  <div className="flex items-center gap-2 shrink-0">
-                    {c.mobile && (
-                      <ContactButtons
-                        memberId={c.memberId}
-                        mobile={c.mobile}
-                        message={expiredMembershipMessage(c.fullName, c.expiryDate)}
-                        messageType="expired"
-                      />
-                    )}
-                    <Link
-                      href={`/members/${c.memberId}?renew=1`}
-                      className="inline-flex items-center gap-1 text-xs bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded-lg px-2.5 py-1.5 font-medium transition-colors"
-                    >
-                      <RefreshCw className="w-3 h-3" />
-                      Renew
-                    </Link>
-                  </div>
-                )}
-              </div>
-            ))}
+              )
+            })}
           </div>
-          {checkIns.length > INITIAL_VISIBLE && (
+          {groups.length > INITIAL_VISIBLE && (
             <button
               onClick={() => setShowAll(s => !s)}
               className="w-full flex items-center justify-center gap-1.5 py-2.5 text-xs text-primary hover:text-primary/70 font-medium border-t border-border transition-colors"
@@ -146,7 +182,7 @@ export default function ExpiredCheckInsPanel({
               {showAll ? (
                 <>Show less <ChevronUp className="w-3.5 h-3.5" /></>
               ) : (
-                <>View all {checkIns.length} <ChevronDown className="w-3.5 h-3.5" /></>
+                <>View all {groups.length} <ChevronDown className="w-3.5 h-3.5" /></>
               )}
             </button>
           )}

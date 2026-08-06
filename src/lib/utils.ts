@@ -44,6 +44,30 @@ export function getISTDateStr(date: Date = new Date()): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: IST_TIMEZONE }).format(date)
 }
 
+export interface CheckInGroup<T> {
+  key: string
+  latest: T
+  all: T[]
+}
+
+// Same grouping the Biometric page's Attendance tab already does — one row
+// per person per day instead of one row per punch, since check-in/check-out
+// (or repeat re-entries) from the same person otherwise flood the list with
+// duplicates. Assumes `items` already comes latest-first (the source query
+// orders by punched_at descending), so `all[0]` is each group's latest punch.
+export function groupCheckInsByPerson<T>(items: T[], keyFn: (item: T) => string, timestampFn: (item: T) => string): CheckInGroup<T>[] {
+  const groups = new Map<string, T[]>()
+  for (const item of items) {
+    const key = keyFn(item)
+    const existing = groups.get(key)
+    if (existing) existing.push(item)
+    else groups.set(key, [item])
+  }
+  return Array.from(groups.entries())
+    .map(([key, all]) => ({ key, latest: all[0], all }))
+    .sort((a, b) => new Date(timestampFn(b.latest)).getTime() - new Date(timestampFn(a.latest)).getTime())
+}
+
 export function expiredMembershipMessage(fullName: string, expiryDate: string | null): string {
   const expiredText = expiryDate ? `expired on ${formatDate(expiryDate)}` : 'has expired'
   return `Hello ${fullName},\n\nYour Fitness membership ${expiredText}.\n\nPlease renew your membership to continue uninterrupted access.\n\nThank you,\nGreen Power Gym`
