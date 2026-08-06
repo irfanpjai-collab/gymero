@@ -19,13 +19,13 @@ interface PendingCommand {
 // "USER ADD"/"USER DEL" gets rejected with Return=-1002 — this firmware wants
 // the DATA UPDATE/DELETE USERINFO form instead (the full word DELETE, not DEL).
 //
-// unlock_door is UNVERIFIED as of writing — standard documented ADMS/PUSH
-// protocol "CONTROL DEVICE opType,outputNo,duration,reserved,reserved"
-// (opType=1 is the output/door relay, outputNo=1 the main door, duration=5
-// seconds). Given this firmware's track record of deviating from the
-// documented command set, treat the first real test as the actual spec —
-// check the Command Queue's Result column; anything other than "Return=0"
-// means this string needs adjusting for this specific device/firmware.
+// unlock_door — attempt 2. The 5-field zero-padded form
+// "CONTROL DEVICE 01,1,5,0,1" got Return=-13 (command recognized — this
+// isn't the -1002 "unrecognized command" seen for the wrong USER ADD/DEL
+// form — but the parameters were rejected). Trying the shorter 4-field
+// unpadded form some device dialects use instead: opType,outputNo,duration,reserved.
+// Still unverified — if this also fails, remote unlock may not be
+// supported by this firmware at all rather than being a syntax problem.
 function buildCommandString(cmd: PendingCommand): string {
   const pin = cmd.member_id
   const name = cmd.full_name ?? `Member ${pin}`
@@ -40,7 +40,7 @@ function buildCommandString(cmd: PendingCommand): string {
     case 'remove':
       return `DATA DELETE USERINFO PIN=${pin}`
     case 'unlock_door':
-      return `CONTROL DEVICE 01,1,5,0,1`
+      return `CONTROL DEVICE 1,1,5,0`
   }
 }
 
