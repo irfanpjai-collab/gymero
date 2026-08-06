@@ -36,6 +36,19 @@ export function formatDateTime(date: string | Date): string {
   return `${datePart}, ${timePart}`
 }
 
+// "Today" per India's calendar day, for query day-boundaries rather than
+// display — Server Components run on Vercel (UTC), so `new Date()` alone
+// (or slicing its ISO string) means "today in UTC", which is a different
+// calendar day than IST for the first 5.5 hours after midnight IST.
+export function getISTDateStr(date: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: IST_TIMEZONE }).format(date)
+}
+
+export function expiredMembershipMessage(fullName: string, expiryDate: string | null): string {
+  const expiredText = expiryDate ? `expired on ${formatDate(expiryDate)}` : 'has expired'
+  return `Hello ${fullName},\n\nYour Fitness membership ${expiredText}.\n\nPlease renew your membership to continue uninterrupted access.\n\nThank you,\nGreen Power Gym`
+}
+
 export function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(amount)
 }

@@ -5,6 +5,7 @@ import { requireRole } from '@/lib/auth'
 import { revalidatePath } from 'next/cache'
 import { queueMissingEnrollments } from '@/lib/adms-enrollment'
 import { logAudit, actorFromProfile } from '@/lib/audit-log'
+import { getISTDateStr } from '@/lib/utils'
 import type { BiometricAttendance } from '@/types'
 
 export interface AdmsDevice {
@@ -243,10 +244,12 @@ export async function getBiometricPageData(dateStr?: string): Promise<BiometricP
   const empty: BiometricPageData = { devices: [], attendance: [], members: [], commands: [], admsStatus: {} }
   try {
     const supabase = await createClient()
-    const dayStart = dateStr ? new Date(`${dateStr}T00:00:00`) : new Date()
-    dayStart.setHours(0, 0, 0, 0)
-    const dayEnd = new Date(dayStart)
-    dayEnd.setDate(dayEnd.getDate() + 1)
+    // Explicit +05:30 offset, not a bare "T00:00:00" — this runs on Vercel
+    // (UTC), so parsing without an offset would take midnight UTC as the
+    // boundary (5:30am IST), silently shifting "today" by 5.5 hours and
+    // splitting early-morning IST check-ins across the wrong day.
+    const dayStart = new Date(`${dateStr ?? getISTDateStr()}T00:00:00+05:30`)
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000)
 
     const [
       { data: devices, error: devicesErr },
@@ -384,35 +387,42 @@ export interface RecentCheckIn {
   memberId: string | null
   memberNumber: number | null
   fullName: string
+  mobile: string | null
   timestamp: string
   punch: number
   membershipStatus: 'active' | 'expired' | 'none' | 'coach'
+  expiryDate: string | null
 }
 
-// Lean version of getBiometricPageData for the Dashboard's own check-ins
-// widget — just today's punches + membership status, not the full device/
-// command/member-list payload the Biometric page needs. Deliberately not
-// cached: check-ins are inherently "right now" information, and this is
-// cheap enough (today's rows only, capped) to just fetch live each time.
-export async function getRecentCheckIns(limit = 8): Promise<RecentCheckIn[]> {
+// Powers the Dashboard's Check-Ins panel — every punch for one IST calendar
+// day (default: today), uncapped; the panel itself decides how many rows to
+// show before "View All". "active"/"expired" is evaluated as of the
+// requested day, not today, so browsing a past date reflects whether that
+// person's membership actually covered them on that day — same simplified
+// "latest membership by expiry_date" lookup used elsewhere in this file,
+// not a full history-aware reconstruction of coverage on that date.
+// Deliberately not cached like getBiometricPageData's attendance tab: a
+// single day is a cheap query, and "today" needs to be live, not up to 5
+// minutes stale.
+export async function getCheckInsForDate(dateStr?: string): Promise<RecentCheckIn[]> {
   try {
     const supabase = await createClient()
-    const dayStart = new Date()
-    dayStart.setHours(0, 0, 0, 0)
-    const dayEnd = new Date(dayStart)
-    dayEnd.setDate(dayEnd.getDate() + 1)
+    const dateKey = dateStr ?? getISTDateStr()
+    // Explicit +05:30 offset — see getBiometricPageData for why a bare
+    // "T00:00:00" would silently shift the day boundary by 5.5 hours here.
+    const dayStart = new Date(`${dateKey}T00:00:00+05:30`)
+    const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000)
 
     const [{ data: attRows, error }, { data: coaches }] = await Promise.all([
       supabase
         .from('attendance_logs')
         .select(`
           device_user_id, punched_at, punch_type,
-          member:members!attendance_logs_member_id_fkey(id, full_name, member_id)
+          member:members!attendance_logs_member_id_fkey(id, full_name, member_id, mobile)
         `)
         .gte('punched_at', dayStart.toISOString())
         .lt('punched_at', dayEnd.toISOString())
-        .order('punched_at', { ascending: false })
-        .limit(limit),
+        .order('punched_at', { ascending: false }),
       supabase.from('coaches').select('device_number, name').not('device_number', 'is', null),
     ])
 
@@ -427,7 +437,7 @@ export async function getRecentCheckIns(limit = 8): Promise<RecentCheckIn[]> {
       device_user_id: string
       punched_at: string
       punch_type: number | null
-      member: { id: string; full_name: string; member_id: number } | null
+      member: { id: string; full_name: string; member_id: number; mobile: string } | null
     }
     const rows = (attRows ?? []) as unknown as Row[]
 
@@ -446,23 +456,24 @@ export async function getRecentCheckIns(limit = 8): Promise<RecentCheckIn[]> {
         membershipLookup[m.member_id] = { status: m.status, expiry_date: m.expiry_date }
       }
     }
-    const today = new Date().toISOString().split('T')[0]
 
     return rows.map((row) => {
       const mem = row.member ? membershipLookup[row.member.id] : undefined
-      const active = !!mem && mem.status === 'active' && mem.expiry_date >= today
+      const active = !!mem && mem.status === 'active' && mem.expiry_date >= dateKey
       const coachName = !row.member ? coachByDeviceNumber[Number(row.device_user_id)] : undefined
       return {
         memberId: row.member?.id ?? null,
         memberNumber: row.member?.member_id ?? null,
         fullName: row.member?.full_name ?? coachName ?? `Member #${row.device_user_id}`,
+        mobile: row.member?.mobile ?? null,
         timestamp: row.punched_at,
         punch: row.punch_type ?? 0,
         membershipStatus: coachName ? 'coach' : mem ? (active ? 'active' : 'expired') : 'none',
+        expiryDate: mem?.expiry_date ?? null,
       }
     })
   } catch (err) {
-    console.error('getRecentCheckIns error:', err)
+    console.error('getCheckInsForDate error:', err)
     return []
   }
 }
