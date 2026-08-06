@@ -95,12 +95,27 @@ export async function queueRemove(memberId: number) {
   return queueCommand('remove', memberId)
 }
 
+// block/unblock still send a full DATA UPDATE USERINFO (see buildCommandString
+// in getrequest/route.ts) — without a name, the firmware falls back to
+// "Member <PIN>" and silently overwrites whatever name was on the device.
+// Both need the real name looked up, same as queueEnroll already gets from
+// its caller.
+async function lookupFullName(memberId: number): Promise<string | undefined> {
+  try {
+    const supabase = await createClient()
+    const { data } = await supabase.from('members').select('full_name').eq('member_id', memberId).maybeSingle()
+    return data?.full_name ?? undefined
+  } catch {
+    return undefined
+  }
+}
+
 export async function queueBlock(memberId: number) {
-  return queueCommand('block', memberId)
+  return queueCommand('block', memberId, await lookupFullName(memberId))
 }
 
 export async function queueUnblock(memberId: number) {
-  return queueCommand('unblock', memberId)
+  return queueCommand('unblock', memberId, await lookupFullName(memberId))
 }
 
 // Moved over from the removed biometric.ts — identical query. attendance_logs
