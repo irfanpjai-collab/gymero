@@ -19,13 +19,22 @@ interface PendingCommand {
 // "USER ADD"/"USER DEL" gets rejected with Return=-1002 — this firmware wants
 // the DATA UPDATE/DELETE USERINFO form instead (the full word DELETE, not DEL).
 //
-// unlock_door — attempt 2. The 5-field zero-padded form
-// "CONTROL DEVICE 01,1,5,0,1" got Return=-13 (command recognized — this
-// isn't the -1002 "unrecognized command" seen for the wrong USER ADD/DEL
-// form — but the parameters were rejected). Trying the shorter 4-field
-// unpadded form some device dialects use instead: opType,outputNo,duration,reserved.
-// Still unverified — if this also fails, remote unlock may not be
-// supported by this firmware at all rather than being a syntax problem.
+// unlock_door: two syntax variants of "CONTROL DEVICE" both got Return=-13.
+// Device confirmed to be a K30 Pro whose on-device Access Control menu only
+// exposes a relay delay setting — no group/timezone rule engine — so this is
+// parked; the firmware tier likely doesn't implement remote unlock at all.
+//
+// block: Grp=0/TZ=0 got Return=0 (accepted) but was physically confirmed NOT
+// to deny door entry — expected, since this device fires the relay on any
+// successful match regardless of Grp/TZ (matches K30 Pro's bare-bones access
+// control). Trying Pri=255 instead: the ZK protocol family has a genuine
+// enable/disable bit in the user record, separate from Grp/TZ/admin-level
+// (see community protocol docs, adrobinoga/zk-protocol). No official spec
+// for how that maps onto the plain-text ADMS Pri field was found, but this
+// reuses DATA UPDATE USERINFO — a command verb already proven to work on
+// this device (enroll/block/unblock all get Return=0) — so it's a low-risk
+// value swap, not a new blind command guess. Needs physical re-test: block a
+// member, confirm the device denies their scan.
 function buildCommandString(cmd: PendingCommand): string {
   const pin = cmd.member_id
   const name = cmd.full_name ?? `Member ${pin}`
@@ -34,7 +43,7 @@ function buildCommandString(cmd: PendingCommand): string {
     case 'enroll':
       return `DATA UPDATE USERINFO PIN=${pin}\tName=${name}\tPri=0\tPasswd=\tCard=\tGrp=1\tTZ=1`
     case 'block':
-      return `DATA UPDATE USERINFO PIN=${pin}\tName=${name}\tPri=0\tPasswd=\tCard=\tGrp=0\tTZ=0`
+      return `DATA UPDATE USERINFO PIN=${pin}\tName=${name}\tPri=255\tPasswd=\tCard=\tGrp=0\tTZ=0`
     case 'unblock':
       return `DATA UPDATE USERINFO PIN=${pin}\tName=${name}\tPri=0\tPasswd=\tCard=\tGrp=1\tTZ=1`
     case 'remove':
