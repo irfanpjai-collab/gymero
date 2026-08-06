@@ -15,7 +15,7 @@ export interface AdmsDevice {
 
 export interface AdmsCommand {
   id: string
-  operation: 'enroll' | 'remove' | 'block' | 'unblock'
+  operation: 'enroll' | 'remove' | 'block' | 'unblock' | 'unlock_door'
   member_id: number
   full_name: string | null
   status: 'pending' | 'sent' | 'done' | 'failed'
@@ -31,7 +31,7 @@ export interface AdmsCommand {
 function auditAction(op: AdmsCommand['operation']): 'push_members' | 'delete_user' | 'set_access' {
   if (op === 'enroll') return 'push_members'
   if (op === 'remove') return 'delete_user'
-  return 'set_access' // block / unblock
+  return 'set_access' // block / unblock / unlock_door
 }
 
 async function queueCommand(
@@ -116,6 +116,19 @@ export async function queueBlock(memberId: number) {
 
 export async function queueUnblock(memberId: number) {
   return queueCommand('unblock', memberId, await lookupFullName(memberId))
+}
+
+// Device-wide, not tied to a member — 0 is a sentinel PIN (see
+// supabase/adms_unlock_door.sql; real member_ids and coach device numbers
+// never reach 0). UNVERIFIED against the real device as of writing: the
+// command string this sends (buildCommandString in getrequest/route.ts) is
+// the standard documented ADMS "CONTROL DEVICE" remote-unlock format, but
+// this firmware has previously deviated from documented commands elsewhere
+// (USER ADD/DEL got rejected, needed DATA UPDATE/DELETE USERINFO instead) —
+// check the Command Queue's Result column after testing; a non-"Return=0"
+// result means the syntax needs adjusting for this specific device.
+export async function queueUnlockDoor(): Promise<{ error?: string }> {
+  return queueCommand('unlock_door', 0)
 }
 
 // Moved over from the removed biometric.ts — identical query. attendance_logs

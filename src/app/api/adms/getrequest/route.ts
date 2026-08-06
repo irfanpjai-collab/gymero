@@ -9,7 +9,7 @@ function textResponse(body: string, status = 200): NextResponse {
 
 interface PendingCommand {
   id: string
-  operation: 'enroll' | 'remove' | 'block' | 'unblock'
+  operation: 'enroll' | 'remove' | 'block' | 'unblock' | 'unlock_door'
   member_id: number
   full_name: string | null
   attempts: number
@@ -18,6 +18,14 @@ interface PendingCommand {
 // Builds the device-bound command string. Confirmed against the real device:
 // "USER ADD"/"USER DEL" gets rejected with Return=-1002 — this firmware wants
 // the DATA UPDATE/DELETE USERINFO form instead (the full word DELETE, not DEL).
+//
+// unlock_door is UNVERIFIED as of writing — standard documented ADMS/PUSH
+// protocol "CONTROL DEVICE opType,outputNo,duration,reserved,reserved"
+// (opType=1 is the output/door relay, outputNo=1 the main door, duration=5
+// seconds). Given this firmware's track record of deviating from the
+// documented command set, treat the first real test as the actual spec —
+// check the Command Queue's Result column; anything other than "Return=0"
+// means this string needs adjusting for this specific device/firmware.
 function buildCommandString(cmd: PendingCommand): string {
   const pin = cmd.member_id
   const name = cmd.full_name ?? `Member ${pin}`
@@ -31,6 +39,8 @@ function buildCommandString(cmd: PendingCommand): string {
       return `DATA UPDATE USERINFO PIN=${pin}\tName=${name}\tPri=0\tPasswd=\tCard=\tGrp=1\tTZ=1`
     case 'remove':
       return `DATA DELETE USERINFO PIN=${pin}`
+    case 'unlock_door':
+      return `CONTROL DEVICE 01,1,5,0,1`
   }
 }
 

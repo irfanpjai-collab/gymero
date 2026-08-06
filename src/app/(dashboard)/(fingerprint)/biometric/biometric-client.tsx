@@ -21,6 +21,7 @@ import {
   Calendar,
   ChevronDown,
   ChevronUp,
+  DoorOpen,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
@@ -29,6 +30,7 @@ import {
   queueRemove,
   queueBlock,
   queueUnblock,
+  queueUnlockDoor,
   bulkEnrollAllMembers,
   type AdmsDevice,
   type AdmsCommand,
@@ -124,6 +126,7 @@ export default function BiometricClient({ initialData }: { initialData: Biometri
   const [search, setSearch] = useState('')
   const [busyMemberId, setBusyMemberId] = useState<number | null>(null)
   const [syncing, setSyncing] = useState(false)
+  const [unlocking, setUnlocking] = useState(false)
   const [attendanceDate, setAttendanceDate] = useState(todayStr())
   const [membershipFilter, setMembershipFilter] = useState<'all' | 'active' | 'expired' | 'none'>('all')
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
@@ -206,6 +209,15 @@ export default function BiometricClient({ initialData }: { initialData: Biometri
     loadAll()
   }
 
+  async function handleUnlockDoor() {
+    setUnlocking(true)
+    const res = await queueUnlockDoor()
+    if (res.error) toast.error(res.error)
+    else toast.success(`Unlock queued — applies within a few seconds, on the device's next check-in`)
+    setUnlocking(false)
+    loadAll()
+  }
+
   async function handleBulkSync() {
     setSyncing(true)
     const res = await bulkEnrollAllMembers()
@@ -283,6 +295,15 @@ export default function BiometricClient({ initialData }: { initialData: Biometri
             {deviceOnline ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
             {deviceOnline ? 'Device seen recently' : 'No device check-in in 5+ min'}
           </span>
+          <button
+            onClick={handleUnlockDoor}
+            disabled={unlocking}
+            title="Unlocks the access-control door — not tied to any specific member"
+            className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 disabled:opacity-50 rounded-xl text-xs text-emerald-400 font-medium transition-colors"
+          >
+            {unlocking ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <DoorOpen className="w-3.5 h-3.5" />}
+            Unlock Door
+          </button>
           <button onClick={loadAll} className="inline-flex items-center gap-2 px-3 py-1.5 bg-card border border-border hover:bg-muted rounded-xl text-xs text-muted-foreground transition-colors">
             <RefreshCw className="w-3.5 h-3.5" /> Refresh
           </button>
@@ -515,8 +536,12 @@ export default function BiometricClient({ initialData }: { initialData: Biometri
               <tbody>
                 {commands.map(cmd => (
                   <tr key={cmd.id} className="border-b border-border last:border-0">
-                    <td className="px-4 py-2.5 text-foreground font-medium capitalize">{cmd.operation}</td>
-                    <td className="px-4 py-2.5 text-muted-foreground font-mono text-xs">#{cmd.member_id}</td>
+                    <td className="px-4 py-2.5 text-foreground font-medium capitalize">
+                      {cmd.operation === 'unlock_door' ? 'Unlock Door' : cmd.operation}
+                    </td>
+                    <td className="px-4 py-2.5 text-muted-foreground font-mono text-xs">
+                      {cmd.operation === 'unlock_door' ? '—' : `#${cmd.member_id}`}
+                    </td>
                     <td className="px-4 py-2.5"><CommandStatusBadge status={cmd.status} /></td>
                     <td className="px-4 py-2.5 text-muted-foreground font-mono text-xs">{formatDateTime(cmd.created_at)}</td>
                     <td className="px-4 py-2.5 text-muted-foreground text-xs">{cmd.result ?? '—'}</td>
