@@ -12,7 +12,7 @@ interface PunchDetails {
   mobile: string
   punchType: number
   timestamp: string
-  membershipStatus: 'active' | 'expired' | 'none'
+  membershipStatus: 'active' | 'expired' | 'none' | 'coach'
   expiryDate: string | null
 }
 
@@ -58,13 +58,21 @@ export default function PunchNotifier() {
             expiryDate: current?.expiry_date ?? null,
           }
         } else {
+          // No member_id match — could be a coach punching in (coaches live
+          // in a separate 10000+ device PIN namespace, see coach_device_push.sql).
+          const { data: coach } = await supabase
+            .from('coaches')
+            .select('name')
+            .eq('device_number', Number(row.device_user_id))
+            .maybeSingle()
+
           details = {
-            fullName: `Unknown member (#${row.device_user_id})`,
+            fullName: coach?.name ?? `Unknown member (#${row.device_user_id})`,
             memberNumber: Number(row.device_user_id) || 0,
             mobile: '',
             punchType: row.punch_type,
             timestamp: row.punched_at,
-            membershipStatus: 'none',
+            membershipStatus: coach ? 'coach' : 'none',
             expiryDate: null,
           }
         }
@@ -108,6 +116,8 @@ export default function PunchNotifier() {
       ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20'
       : current.membershipStatus === 'expired'
       ? 'text-red-400 bg-red-500/10 border-red-500/20'
+      : current.membershipStatus === 'coach'
+      ? 'text-blue-400 bg-blue-500/10 border-blue-500/20'
       : 'text-muted-foreground bg-muted/30 border-border'
 
   return (
@@ -158,13 +168,13 @@ export default function PunchNotifier() {
           )}
 
           <div className="flex items-center gap-2.5">
-            {current.membershipStatus === 'active'
+            {current.membershipStatus === 'active' || current.membershipStatus === 'coach'
               ? <CircleCheck className="w-4 h-4 text-emerald-400 shrink-0" />
               : <CircleX className="w-4 h-4 text-muted-foreground/70 shrink-0" />}
             <div>
               <p className="text-[11px] text-muted-foreground uppercase tracking-wider mb-0.5">Membership</p>
               <span className={`inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full border ${statusStyles}`}>
-                {current.membershipStatus === 'active' ? 'Active' : current.membershipStatus === 'expired' ? 'Expired' : 'No membership'}
+                {current.membershipStatus === 'active' ? 'Active' : current.membershipStatus === 'expired' ? 'Expired' : current.membershipStatus === 'coach' ? 'Coach' : 'No membership'}
               </span>
             </div>
           </div>

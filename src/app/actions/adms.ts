@@ -256,6 +256,7 @@ export async function getBiometricPageData(dateStr?: string): Promise<BiometricP
       { data: doneCommands },
       { data: punches },
       { data: fingerprints },
+      { data: coaches },
     ] = await Promise.all([
       supabase.from('adms_devices').select('*').order('last_seen', { ascending: false }),
       supabase
@@ -276,6 +277,7 @@ export async function getBiometricPageData(dateStr?: string): Promise<BiometricP
       supabase.from('adms_commands').select('member_id, operation, created_at').eq('status', 'done').order('created_at', { ascending: true }),
       supabase.from('attendance_logs').select('device_user_id'),
       supabase.from('adms_fingerprints').select('device_user_id').eq('valid', true),
+      supabase.from('coaches').select('device_number, name').not('device_number', 'is', null),
     ])
     if (devicesErr) throw devicesErr
     if (attErr) throw attErr
@@ -305,17 +307,27 @@ export async function getBiometricPageData(dateStr?: string): Promise<BiometricP
     }
     const today = new Date().toISOString().split('T')[0]
 
+    // Coach punches share attendance_logs with members but have no member_id
+    // match (device_number lives in a separate 10000+ PIN namespace — see
+    // coach_device_push.sql) — without this they'd show as a bare device
+    // number with "No membership" instead of the coach's name.
+    const coachByDeviceNumber: Record<number, string> = {}
+    for (const c of (coaches ?? []) as { device_number: number | null; name: string }[]) {
+      if (c.device_number != null) coachByDeviceNumber[c.device_number] = c.name
+    }
+
     const attendance: BiometricAttendance[] = rows.map((row) => {
       const mem = row.member ? membershipLookup[row.member.id] : undefined
       const active = !!mem && mem.status === 'active' && mem.expiry_date >= today
+      const coachName = !row.member ? coachByDeviceNumber[Number(row.device_user_id)] : undefined
       return {
         user_id:            row.device_user_id,
         timestamp:          row.punched_at,
         status:             row.status ?? 0,
         punch:              row.punch_type ?? 0,
-        user_name:          row.member?.full_name,
+        user_name:          row.member?.full_name ?? coachName,
         crm_id:             row.member?.id,
-        membership_status:  mem ? (active ? 'active' : 'expired') : 'none',
+        membership_status:  coachName ? 'coach' : mem ? (active ? 'active' : 'expired') : 'none',
         expiry_date:        mem?.expiry_date,
       }
     })
@@ -374,7 +386,7 @@ export interface RecentCheckIn {
   fullName: string
   timestamp: string
   punch: number
-  membershipStatus: 'active' | 'expired' | 'none'
+  membershipStatus: 'active' | 'expired' | 'none' | 'coach'
 }
 
 // Lean version of getBiometricPageData for the Dashboard's own check-ins
@@ -390,18 +402,26 @@ export async function getRecentCheckIns(limit = 8): Promise<RecentCheckIn[]> {
     const dayEnd = new Date(dayStart)
     dayEnd.setDate(dayEnd.getDate() + 1)
 
-    const { data: attRows, error } = await supabase
-      .from('attendance_logs')
-      .select(`
-        device_user_id, punched_at, punch_type,
-        member:members!attendance_logs_member_id_fkey(id, full_name, member_id)
-      `)
-      .gte('punched_at', dayStart.toISOString())
-      .lt('punched_at', dayEnd.toISOString())
-      .order('punched_at', { ascending: false })
-      .limit(limit)
+    const [{ data: attRows, error }, { data: coaches }] = await Promise.all([
+      supabase
+        .from('attendance_logs')
+        .select(`
+          device_user_id, punched_at, punch_type,
+          member:members!attendance_logs_member_id_fkey(id, full_name, member_id)
+        `)
+        .gte('punched_at', dayStart.toISOString())
+        .lt('punched_at', dayEnd.toISOString())
+        .order('punched_at', { ascending: false })
+        .limit(limit),
+      supabase.from('coaches').select('device_number, name').not('device_number', 'is', null),
+    ])
 
     if (error) throw error
+
+    const coachByDeviceNumber: Record<number, string> = {}
+    for (const c of (coaches ?? []) as { device_number: number | null; name: string }[]) {
+      if (c.device_number != null) coachByDeviceNumber[c.device_number] = c.name
+    }
 
     type Row = {
       device_user_id: string
@@ -431,13 +451,14 @@ export async function getRecentCheckIns(limit = 8): Promise<RecentCheckIn[]> {
     return rows.map((row) => {
       const mem = row.member ? membershipLookup[row.member.id] : undefined
       const active = !!mem && mem.status === 'active' && mem.expiry_date >= today
+      const coachName = !row.member ? coachByDeviceNumber[Number(row.device_user_id)] : undefined
       return {
         memberId: row.member?.id ?? null,
         memberNumber: row.member?.member_id ?? null,
-        fullName: row.member?.full_name ?? `Member #${row.device_user_id}`,
+        fullName: row.member?.full_name ?? coachName ?? `Member #${row.device_user_id}`,
         timestamp: row.punched_at,
         punch: row.punch_type ?? 0,
-        membershipStatus: mem ? (active ? 'active' : 'expired') : 'none',
+        membershipStatus: coachName ? 'coach' : mem ? (active ? 'active' : 'expired') : 'none',
       }
     })
   } catch (err) {

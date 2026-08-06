@@ -139,7 +139,7 @@ export interface BiometricAttendance {
   punch:              number              // 0=check-in  1=check-out  4=OT-in  5=OT-out
   user_name?:         string
   crm_id?:            string             // resolved CRM member UUID, for linking to /members/[id]
-  membership_status?: 'active' | 'expired' | 'none'
+  membership_status?: 'active' | 'expired' | 'none' | 'coach'
   expiry_date?:       string
 }
 

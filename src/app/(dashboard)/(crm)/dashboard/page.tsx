@@ -217,9 +217,10 @@ export default async function DashboardPage() {
                   <span className={`inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full border flex-shrink-0 ml-3 ${
                     c.membershipStatus === 'active' ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' :
                     c.membershipStatus === 'expired' ? 'text-red-400 bg-red-500/10 border-red-500/20' :
+                    c.membershipStatus === 'coach' ? 'text-blue-400 bg-blue-500/10 border-blue-500/20' :
                     'text-muted-foreground bg-muted/30 border-border'
                   }`}>
-                    {c.membershipStatus === 'active' ? 'Active' : c.membershipStatus === 'expired' ? 'Expired' : 'No membership'}
+                    {c.membershipStatus === 'active' ? 'Active' : c.membershipStatus === 'expired' ? 'Expired' : c.membershipStatus === 'coach' ? 'Coach' : 'No membership'}
                   </span>
                 </div>
               )

@@ -419,9 +419,10 @@ export default function BiometricClient({ initialData }: { initialData: Biometri
                             <span className={`inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full border ${
                               latest.membership_status === 'active' ? 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' :
                               latest.membership_status === 'expired' ? 'text-red-400 bg-red-500/10 border-red-500/20' :
+                              latest.membership_status === 'coach' ? 'text-blue-400 bg-blue-500/10 border-blue-500/20' :
                               'text-muted-foreground bg-muted/30 border-border'
                             }`}>
-                              {latest.membership_status === 'active' ? 'Active' : latest.membership_status === 'expired' ? 'Expired' : 'No membership'}
+                              {latest.membership_status === 'active' ? 'Active' : latest.membership_status === 'expired' ? 'Expired' : latest.membership_status === 'coach' ? 'Coach' : 'No membership'}
                             </span>
                           </td>
                         </tr>
