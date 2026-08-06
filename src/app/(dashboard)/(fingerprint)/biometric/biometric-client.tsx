@@ -375,6 +375,7 @@ export default function BiometricClient({ initialData }: { initialData: Biometri
                 <p className="text-muted-foreground text-sm">No punches match this filter</p>
               </div>
             ) : (
+              <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border">
@@ -442,6 +443,7 @@ export default function BiometricClient({ initialData }: { initialData: Biometri
                   })}
                 </tbody>
               </table>
+              </div>
             )}
           </div>
         </div>
@@ -469,6 +471,7 @@ export default function BiometricClient({ initialData }: { initialData: Biometri
             </button>
           </div>
           <div className="bg-card rounded-2xl border border-border overflow-hidden">
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border">
@@ -509,6 +512,7 @@ export default function BiometricClient({ initialData }: { initialData: Biometri
                 })}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       )}
@@ -525,6 +529,7 @@ export default function BiometricClient({ initialData }: { initialData: Biometri
               <p className="text-muted-foreground text-sm">No commands queued yet</p>
             </div>
           ) : (
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border">
@@ -549,6 +554,7 @@ export default function BiometricClient({ initialData }: { initialData: Biometri
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       )}
