@@ -30,6 +30,7 @@ import { PtDialog, CancelPtButton } from './pt-dialog'
 import EditExpiryDialog from './edit-expiry-dialog'
 import AddJoinDateDialog from './add-join-date-dialog'
 import SendReceiptButton from '@/components/shared/SendReceiptButton'
+import SendReminderButton from '@/components/shared/SendReminderButton'
 import type { Payment } from '@/types'
 
 const PUNCH_LABELS: Record<number, string> = {
@@ -411,6 +412,14 @@ export default async function MemberDetailPage({
                         : `${daysLeft} day${daysLeft !== 1 ? 's' : ''}`
                       : '—'}
                   </p>
+                  {daysLeft !== null && daysLeft <= 0 && (
+                    <SendReminderButton
+                      memberId={member.id}
+                      fullName={member.full_name}
+                      mobile={member.mobile}
+                      expiryDate={membership.expiry_date}
+                    />
+                  )}
                 </div>
               </div>
             )}
